@@ -39,8 +39,9 @@ pub enum Source {
     LocalOSMTiles,
 }
 
-fn sources(egui_ctx: Context) -> HashMap<Source, Box<dyn TilesManager + Send>> {
+fn sources(egui_ctx: Context) -> (HashMap<Source, Box<dyn TilesManager + Send>>, Source) {
     let mut sources: HashMap<Source, Box<dyn TilesManager + Send>> = HashMap::default();
+    let mut default_selected = Source::OpenStreetMap;
 
     sources.insert(
         Source::OpenStreetMap,
@@ -51,9 +52,12 @@ fn sources(egui_ctx: Context) -> HashMap<Source, Box<dyn TilesManager + Send>> {
         )),
     );
 
-    sources.insert(Source::LocalOSMTiles, Box::new(LocalOSMTiles::new(egui_ctx.to_owned())));
+    if let Some(localosm) = LocalOSMTiles::new(egui_ctx.to_owned()) {
+        sources.insert(Source::LocalOSMTiles, Box::new(localosm));
+        default_selected = Source::LocalOSMTiles;
+    }
 
-    sources
+    (sources, default_selected)
 }
 
 struct ConfigContext {
@@ -67,7 +71,7 @@ struct ConfigContext {
 
 pub struct MyApp {
     sources: HashMap<Source, Box<dyn TilesManager + Send>>,
-    selected_provider: Source,
+    selected_source: Source,
     map_memory: MapMemory,
     config_ctx: ConfigContext,
     plugin_painter: mappainter::MapPainterState,
@@ -76,6 +80,7 @@ pub struct MyApp {
 impl MyApp {
     pub fn new(egui_ctx: Context) -> Self {
         egui_extras::install_image_loaders(&egui_ctx);
+        let (sources, default_source) = sources(egui_ctx.to_owned());
 
         let config_ctx = ConfigContext {
             inifile: "terminal.ini".to_string(),
@@ -85,8 +90,8 @@ impl MyApp {
         };
 
         let mut instance = Self {
-            sources: sources(egui_ctx.to_owned()),
-            selected_provider: Source::LocalOSMTiles,
+            sources,
+            selected_source: default_source,
             map_memory: MapMemory::default(),
             config_ctx,
             plugin_painter: mappainter::MapPainter::alloc_state(),
@@ -225,7 +230,7 @@ pub fn zoom(ui: &Ui, map_memory: &mut MapMemory) {
         });
 }
 
-pub fn controls(ui: &Ui, selected_provider: &mut Source, possible_sources: &mut dyn Iterator<Item = &Source>) {
+pub fn controls(ui: &Ui, selected_source: &mut Source, possible_sources: &mut dyn Iterator<Item = &Source>) {
     Window::new("Satellite")
         .collapsible(false)
         .resizable(false)
@@ -234,11 +239,11 @@ pub fn controls(ui: &Ui, selected_provider: &mut Source, possible_sources: &mut 
         .show(ui.ctx(), |ui| {
             ui.collapsing("Map", |ui| {
                 ComboBox::from_label("")
-                    .selected_text(format!("{:?}", selected_provider))
+                    .selected_text(format!("{:?}", selected_source))
                     .show_ui(ui, |ui| {
                         ui.set_min_width(100.);
                         for p in possible_sources {
-                            ui.selectable_value(selected_provider, *p, format!("{:?}", p));
+                            ui.selectable_value(selected_source, *p, format!("{:?}", p));
                         }
                     });
             });
@@ -253,7 +258,7 @@ impl eframe::App for MyApp {
         };
 
         CentralPanel::default().frame(rimless).show(ctx, |ui| {
-            let tiles = self.sources.get_mut(&self.selected_provider).unwrap().as_mut();
+            let tiles = self.sources.get_mut(&self.selected_source).unwrap().as_mut();
             let attribution = tiles.attribution();
 
             // In egui, widgets are constructed and consumed in each frame.
@@ -265,7 +270,9 @@ impl eframe::App for MyApp {
             // Draw utility windows.
             {
                 zoom(ui, &mut self.map_memory);
-                controls(ui, &mut self.selected_provider, &mut self.sources.keys());
+                if self.sources.len() > 1 {
+                    controls(ui, &mut self.selected_source, &mut self.sources.keys());
+                }
                 acknowledge(ui, attribution);
             }
         });

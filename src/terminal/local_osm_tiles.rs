@@ -266,8 +266,22 @@ pub struct LocalOSMTiles {
 }
 
 impl LocalOSMTiles {
-    pub fn new(egui_ctx: Context) -> Self {
-        let rules = parse_file(Path::new("./localosm/style"), "index.mapcss");
+    pub fn new(egui_ctx: Context) -> Option<Self> {
+        let styler = match parse_file(Path::new("./localosm/style"), "index.mapcss") {
+            Ok(rules) => Styler::new(rules, None),
+            Err(err) => {
+                log::warn!("MapCSS rules not loaded: {}", err);
+                return None;
+            }
+        };
+
+        let reader = match GeodataReader::load("./localosm/data.bin") {
+            Ok(reader) => reader,
+            Err(err) => {
+                log::warn!("OSM data not loaded: {}", err);
+                return None;
+            }
+        };
 
         let image_waiting = Texture::new(include_bytes!("../../assets/waiting.png"), &egui_ctx).unwrap();
         let image_collecting = Texture::new(include_bytes!("../../assets/collecting.png"), &egui_ctx).unwrap();
@@ -277,15 +291,15 @@ impl LocalOSMTiles {
 
         let render_ctx = Arc::new(RenderContext {
             egui_ctx,
-            styler: Styler::new(rules.unwrap(), None),
+            styler,
             drawer: Drawer::new(Path::new("./localosm/style")),
-            reader: GeodataReader::load("./localosm/data.bin").unwrap(),
+            reader,
             scale: 1,
         });
 
         let thread_ctx = ThreadsContext::new(render_ctx);
 
-        Self {
+        Some(Self {
             thread_ctx,
             displaycache: Default::default(),
             image_waiting,
@@ -293,7 +307,7 @@ impl LocalOSMTiles {
             image_collecting,
             image_rendering,
             image_empty,
-        }
+        })
     }
 
     fn is_supported_tile(&self, tile_id: &TileId) -> bool {
