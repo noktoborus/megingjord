@@ -1,0 +1,3 @@
+[submodule "broken-osm-renderer"]
+	path = broken-osm-renderer
+	url = https://github.com/noktoborus/broken-osm-renderer
