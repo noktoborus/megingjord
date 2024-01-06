@@ -39,18 +39,6 @@ jobs:
     - name: Documentation
       run:  cargo doc
 
-    # Building
-
-    - name: Build
-      run: cargo build --verbose
-
-
-    - name: Install trunk to make wasm32 build
-      run: cargo install trunk
-
-    - name: make wasm32 build
-      run: trunk build
-
     # build android
     - name: Set up JDK 17
       uses: actions/setup-java@v3
@@ -77,3 +65,16 @@ jobs:
     - name: Build apk
       working-directory: ./megingjord-android/java
       run: ./gradlew build
+
+
+    # build base
+    - name: Build
+      run: cargo build --verbose
+
+    # build wasm32
+    - name: Install trunk to make wasm32 build
+      run: cargo install trunk
+
+    - name: make wasm32 build
+      run: trunk build
+
