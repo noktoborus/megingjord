@@ -8,11 +8,10 @@ use egui::Image;
 use egui::RichText;
 use egui::Ui;
 use egui::Window;
+use megingjord::terminal::config::ConfigContext;
 use megingjord::terminal::local_osm_tiles::LocalOSMTiles;
 use megingjord::terminal::mappainter;
-use scanf::sscanf;
 use std::collections::HashMap;
-use tini::Ini;
 use walkers::sources::Attribution;
 use walkers::HttpOptions;
 use walkers::Map;
@@ -20,8 +19,6 @@ use walkers::MapMemory;
 use walkers::Position;
 use walkers::Tiles;
 use walkers::TilesManager;
-
-use std::time;
 
 fn http_options() -> HttpOptions {
     HttpOptions {
@@ -60,15 +57,6 @@ fn sources(egui_ctx: Context) -> (HashMap<Source, Box<dyn TilesManager + Send>>,
     (sources, default_selected)
 }
 
-struct ConfigContext {
-    inifile: String,
-
-    lon_lat: Option<Position>,
-    zoom: u8,
-
-    trigger_to_save: Option<time::Instant>,
-}
-
 pub struct MyApp {
     sources: HashMap<Source, Box<dyn TilesManager + Send>>,
     selected_source: Source,
@@ -82,115 +70,38 @@ impl MyApp {
         egui_extras::install_image_loaders(&egui_ctx);
         let (sources, default_source) = sources(egui_ctx.to_owned());
 
-        let config_ctx = ConfigContext {
-            inifile: "terminal.ini".to_string(),
-            lon_lat: None,
-            zoom: 16,
-            trigger_to_save: None,
-        };
-
         let mut instance = Self {
             sources,
             selected_source: default_source,
             map_memory: MapMemory::default(),
-            config_ctx,
+            config_ctx: ConfigContext::new("terminal.ini".to_string()),
             plugin_painter: mappainter::MapPainter::alloc_state(),
         };
 
-        MyApp::config_load(&mut instance);
+        instance.config_load();
 
         instance
     }
 
     fn config_load(&mut self) {
-        let tini = match Ini::from_file(&self.config_ctx.inifile) {
-            Ok(tini) => tini,
-            Err(err) => {
-                println!("Config file {} not loaded: {}", self.config_ctx.inifile, err);
-                return;
-            }
-        };
+        let config = self.config_ctx.config_load();
 
-        self.config_ctx.lon_lat = if let Some(lon_lat_option) = tini.get::<String>("Frame", "lon_lat") {
-            let mut lon: f64 = 0.0;
-            let mut lat: f64 = 0.0;
-
-            if sscanf!(lon_lat_option.as_str(), "{}, {}", lon, lat).is_ok() {
-                Some(Position::from_lon_lat(lon, lat))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        if let Some(zoom_value) = tini.get("Frame", "zoom") {
-            self.config_ctx.zoom = zoom_value;
-        }
-
-        if let Some(lon_lat) = self.config_ctx.lon_lat {
-            self.map_memory.center_at(lon_lat);
-        }
-
-        /* { zoom */
-        while self.map_memory.zoom_get() < self.config_ctx.zoom {
-            if self.map_memory.zoom_in().is_err() {
-                break;
-            }
-        }
-
-        while self.map_memory.zoom_get() > self.config_ctx.zoom {
-            if self.map_memory.zoom_out().is_err() {
-                break;
-            }
-        }
-        /* zoom } */
-    }
-
-    fn config_update(&mut self) {
-        if let Some(position) = self.map_memory.detached() {
-            match self.config_ctx.lon_lat {
-                Some(lon_lat) => {
-                    if lon_lat.lon() != position.lon() || lon_lat.lat() != position.lat() {
-                        self.config_ctx.lon_lat = Some(position);
-                        self.config_ctx.trigger_to_save = Some(time::Instant::now());
-                    }
-                }
-                None => {
-                    self.config_ctx.lon_lat = Some(position);
-                    self.config_ctx.trigger_to_save = Some(time::Instant::now());
+        if let Some(zoom_value) = config.zoom {
+            while self.map_memory.zoom_get() < zoom_value {
+                if self.map_memory.zoom_in().is_err() {
+                    break;
                 }
             }
-        } else if self.config_ctx.lon_lat.is_some() {
-            self.config_ctx.lon_lat = None;
-            self.config_ctx.trigger_to_save = Some(time::Instant::now());
+
+            while self.map_memory.zoom_get() > zoom_value {
+                if self.map_memory.zoom_out().is_err() {
+                    break;
+                }
+            }
         }
 
-        if self.config_ctx.zoom != self.map_memory.zoom_get() {
-            self.config_ctx.zoom = self.map_memory.zoom_get();
-            self.config_ctx.trigger_to_save = Some(time::Instant::now());
-        }
-
-        if self
-            .config_ctx
-            .trigger_to_save
-            .map_or(false, |instant| instant.elapsed() > time::Duration::from_secs(1))
-        {
-            let mut tini = Ini::new();
-
-            tini = tini.section("Frame").item("zoom", self.config_ctx.zoom);
-
-            if let Some(lon_lat) = self.config_ctx.lon_lat {
-                tini = tini
-                    .section("Frame")
-                    .item("lon_lat", format!("{}, {}", lon_lat.lon(), lon_lat.lat()));
-            }
-
-            match tini.to_file(&self.config_ctx.inifile) {
-                Ok(_) => println!("Config file {} saved", self.config_ctx.inifile),
-                Err(err) => println!("Config file {} not saved: {}", self.config_ctx.inifile, err),
-            }
-            self.config_ctx.trigger_to_save = None;
+        if let Some(lat_lon) = config.lat_lon {
+            self.map_memory.center_at(lat_lon);
         }
     }
 }
@@ -252,6 +163,8 @@ pub fn controls(ui: &Ui, selected_source: &mut Source, possible_sources: &mut dy
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
+        let myposition = Position::from_lat_lon(0.0, 0.0);
+
         let rimless = Frame {
             fill: ctx.style().visuals.panel_fill,
             ..Default::default()
@@ -262,7 +175,7 @@ impl eframe::App for MyApp {
             let attribution = tiles.attribution();
 
             // In egui, widgets are constructed and consumed in each frame.
-            let map = Map::new(Some(tiles), &mut self.map_memory, Position::from_lon_lat(0.0, 0.0))
+            let map = Map::new(Some(tiles), &mut self.map_memory, myposition)
                 .with_plugin(mappainter::MapPainter::new(&self.plugin_painter));
 
             ui.add(map);
@@ -277,10 +190,12 @@ impl eframe::App for MyApp {
             }
         });
 
-        self.config_update();
+        self.config_ctx
+            .config_update(self.map_memory.zoom_get(), self.map_memory.detached());
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), eframe::Error> {
     env_logger::init();
     eframe::run_native(
@@ -288,4 +203,23 @@ fn main() -> Result<(), eframe::Error> {
         Default::default(),
         Box::new(|cc| Box::new(MyApp::new(cc.egui_ctx.clone()))),
     )
+}
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    // Redirect `log` message to `console.log` and friends:
+    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+
+    let web_options = eframe::WebOptions::default();
+
+    wasm_bindgen_futures::spawn_local(async {
+        eframe::WebRunner::new()
+            .start(
+                "the_canvas_id", // hardcode it
+                web_options,
+                Box::new(|cc| Box::new(MyApp::new(cc.egui_ctx.clone()))),
+            )
+            .await
+            .expect("failed to start eframe");
+    });
 }
