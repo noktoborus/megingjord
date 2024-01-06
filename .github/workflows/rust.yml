@@ -19,6 +19,13 @@ jobs:
       with:
          submodules: true
 
+    - name: Install Rust Stable
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        components: clippy
+        target: wasm32-unknown-unknown
+
     # basic tests
     - name: Run clippy
       run: cargo clippy --all-features -- -D warnings
