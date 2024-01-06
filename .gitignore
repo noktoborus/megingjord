@@ -13,9 +13,11 @@ Cargo.lock
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
-# WASM32 (trunk)
-dist
-
 # app
 terminal.ini
 .cache
+
+# android-related
+megingjord-android/java/.gradle
+megingjord-android/java/app/build
+megingjord-android/java/app/src/main/jniLibs

@@ -1,3 +1,7 @@
+pub mod config;
+pub mod local_osm_tiles;
+pub mod mappainter;
+
 use egui::Align2;
 use egui::Area;
 use egui::CentralPanel;
@@ -8,9 +12,6 @@ use egui::Image;
 use egui::RichText;
 use egui::Ui;
 use egui::Window;
-use megingjord::terminal::config::ConfigContext;
-use megingjord::terminal::local_osm_tiles::LocalOSMTiles;
-use megingjord::terminal::mappainter;
 use std::collections::HashMap;
 use walkers::sources::Attribution;
 use walkers::HttpOptions;
@@ -49,7 +50,7 @@ fn sources(egui_ctx: Context) -> (HashMap<Source, Box<dyn TilesManager + Send>>,
         )),
     );
 
-    if let Some(localosm) = LocalOSMTiles::new(egui_ctx.to_owned()) {
+    if let Some(localosm) = local_osm_tiles::LocalOSMTiles::new(egui_ctx.to_owned()) {
         sources.insert(Source::LocalOSMTiles, Box::new(localosm));
         default_selected = Source::LocalOSMTiles;
     }
@@ -61,7 +62,7 @@ pub struct MyApp {
     sources: HashMap<Source, Box<dyn TilesManager + Send>>,
     selected_source: Source,
     map_memory: MapMemory,
-    config_ctx: ConfigContext,
+    config_ctx: config::ConfigContext,
     plugin_painter: mappainter::MapPainterState,
 }
 
@@ -74,7 +75,7 @@ impl MyApp {
             sources,
             selected_source: default_source,
             map_memory: MapMemory::default(),
-            config_ctx: ConfigContext::new("terminal.ini".to_string()),
+            config_ctx: config::ConfigContext::new("terminal.ini".to_string()),
             plugin_painter: mappainter::MapPainter::alloc_state(),
         };
 
@@ -193,33 +194,4 @@ impl eframe::App for MyApp {
         self.config_ctx
             .config_update(self.map_memory.zoom_get(), self.map_memory.detached());
     }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn main() -> Result<(), eframe::Error> {
-    env_logger::init();
-    eframe::run_native(
-        "MyApp",
-        Default::default(),
-        Box::new(|cc| Box::new(MyApp::new(cc.egui_ctx.clone()))),
-    )
-}
-
-#[cfg(target_arch = "wasm32")]
-fn main() {
-    // Redirect `log` message to `console.log` and friends:
-    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
-
-    let web_options = eframe::WebOptions::default();
-
-    wasm_bindgen_futures::spawn_local(async {
-        eframe::WebRunner::new()
-            .start(
-                "the_canvas_id", // hardcode it
-                web_options,
-                Box::new(|cc| Box::new(MyApp::new(cc.egui_ctx.clone()))),
-            )
-            .await
-            .expect("failed to start eframe");
-    });
 }

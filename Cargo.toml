@@ -1,26 +1,20 @@
-[package]
-name = "megingjord"
+[workspace]
+members = ["megingjord-core", "megingjord", "megingjord-android"]
+default-members = ["megingjord"]
+resolver = "2"
+
+[workspace.package]
 version = "1.0.0"
 authors = ["Noktoborus <noktoborus@gmail.com>"]
 edition = "2021"
 license = "MIT"
+description = "Ambitious OSM data viewer"
 
-[dependencies]
-renderer = { path = "./broken-osm-renderer" }
-walkers = { git = "https://github.com/noktoborus/walkers.git", branch = "feature" }
-image = "0.24"
-log = "0.4"
-egui = "0.24"
-egui_extras = { version = "0.24", features = ["svg"] }
+[workspace.dependencies]
+megingjord-core = { path = "megingjord-core" }
 eframe = "0.24"
-env_logger = "0.10"
-geographiclib-rs = "0.2.3"
-scanf = "1.2.1"
-tini = "1.3.0"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = { version = "0.3.66", features = ["Storage", "Window"] }
-wasm-bindgen-futures = "0.4"
+log = "0.4"
+web-sys = "0.3.64"
 
 [profile.release]
 debug = true

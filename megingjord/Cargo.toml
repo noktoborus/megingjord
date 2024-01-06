@@ -1,0 +1,16 @@
+[package]
+name = "megingjord"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+
+[dependencies]
+megingjord-core = { workspace = true }
+eframe = { workspace = true }
+env_logger = "0.10"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+log = { workspace = true }
+wasm-bindgen-futures = "0.4"
