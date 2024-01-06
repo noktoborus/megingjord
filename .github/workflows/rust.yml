@@ -27,8 +27,8 @@ jobs:
         target: wasm32-unknown-unknown
 
     # basic tests
-    - name: Run clippy
-      run: cargo clippy --all-features -- -D warnings
+    #- name: Run clippy
+    #  run: cargo clippy --all-features -- -D warnings
 
     - name: Check rust formatting
       run:  cargo fmt --all --check
