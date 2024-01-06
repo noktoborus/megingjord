@@ -66,6 +66,16 @@ jobs:
       working-directory: ./megingjord-android/java
       run: ./gradlew build
 
+    - name: List all files
+      run: find
+
+    - name: Archive production artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: android-arm64-v8a
+        path: |
+          megingjord-android/java/app/build/reports/lint-results-debug.html
+          **/*.apk
 
     # build base
     - name: Build
