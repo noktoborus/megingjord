@@ -93,7 +93,7 @@ jobs:
     - name: Archive production artifacts
       uses: actions/upload-artifact@v3
       with:
-        name: android-arm64-v8a
+        name: android
         path: |
           **/*.apk
 
