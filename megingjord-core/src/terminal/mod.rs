@@ -63,7 +63,7 @@ pub struct MyApp {
     selected_source: Source,
     map_memory: MapMemory,
     config_ctx: config::ConfigContext,
-    plugin_painter: mappainter::MapPainterState,
+    plugin_painter: mappainter::MapPainterUi,
 }
 
 impl MyApp {
@@ -76,7 +76,7 @@ impl MyApp {
             selected_source: default_source,
             map_memory: MapMemory::default(),
             config_ctx: config::ConfigContext::new("terminal.ini".to_string()),
-            plugin_painter: mappainter::MapPainter::alloc_state(),
+            plugin_painter: mappainter::MapPainterUi::new(),
         };
 
         instance.config_load();
@@ -175,8 +175,11 @@ impl eframe::App for MyApp {
             let tiles = self.sources.get_mut(&self.selected_source).unwrap().as_mut();
             let attribution = tiles.attribution();
 
+            ctx.set_pixels_per_point(1.2);
+
             // In egui, widgets are constructed and consumed in each frame.
             let map = Map::new(Some(tiles), &mut self.map_memory, myposition)
+                .drag_gesture(!self.plugin_painter.painting_in_progress())
                 .with_plugin(mappainter::MapPainter::new(&self.plugin_painter));
 
             ui.add(map);
@@ -188,6 +191,7 @@ impl eframe::App for MyApp {
                     controls(ui, &mut self.selected_source, &mut self.sources.keys());
                 }
                 acknowledge(ui, attribution);
+                self.plugin_painter.show_ui(ui);
             }
         });
 
