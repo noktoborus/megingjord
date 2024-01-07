@@ -1,4 +1,4 @@
-package ru.styxheim.meginjord;
+package ru.styxheim.megingjord;
 
 import com.google.androidgamesdk.GameActivity;
 
