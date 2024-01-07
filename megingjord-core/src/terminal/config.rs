@@ -34,7 +34,7 @@ fn str_to_position(lat_lon_option: String) -> Option<Position> {
 }
 
 fn position_to_str(lat_lon: &Position) -> String {
-    format!("{}, {}", lat_lon.lon(), lat_lon.lat())
+    format!("{}, {}", lat_lon.lat(), lat_lon.lon())
 }
 
 const SAVER_GUARD_VALUE: u32 = 60;
