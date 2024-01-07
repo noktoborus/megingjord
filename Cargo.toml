@@ -14,7 +14,7 @@ description = "Ambitious OSM data viewer"
 megingjord-core = { path = "megingjord-core" }
 eframe = "0.24"
 log = "0.4"
-web-sys = "0.3.64"
+web-sys = "0.3.66"
 
 [profile.release]
 debug = true

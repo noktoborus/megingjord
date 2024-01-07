@@ -9,7 +9,7 @@ description.workspace = true
 [dependencies]
 megingjord-core = { workspace = true }
 walkers = { git = "https://github.com/noktoborus/walkers.git", branch = "feature" }
-eframe = { workspace = true, features = ["wgpu", "android-game-activity"] }
+eframe = { workspace = true, features = ["android-game-activity"] }
 log = { workspace = true }
 jni = "0.21.1"
 ndk-context = "0.1.1"

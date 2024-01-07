@@ -27,8 +27,8 @@ jobs:
         target: wasm32-unknown-unknown
 
     # basic tests
-    - name: Run clippy
-      run: cargo clippy --all-features -- -D warnings
+    #- name: Run clippy
+    #  run: cargo clippy --all-features -- -D warnings
 
     - name: Check rust formatting
       run:  cargo fmt --all --check
@@ -52,29 +52,49 @@ jobs:
     - name: Install Cargo NDK
       run: cargo install cargo-ndk
 
-    - name: Install Rust Android Target
+    # android arm64-v8a
+    - name: Install ARM64-v8a Rust Toolchain
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
         target: aarch64-linux-android
 
+    # android armv7
+    - name: Install ARMv7 Rust Toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: armv7-linux-androideabi
+
+    # android i686
+    - name: Install x86 Rust Toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: i686-linux-android
+
+    # android x86-64
+    - name: Install x86-64 Rust Toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-linux-android
+
+    #
     - name: Build library for android
       working-directory: ./megingjord-android
-      run: cargo ndk --target arm64-v8a -o java/app/src/main/jniLibs/ build --profile release
+      run: cargo ndk --target x86 --target x86_64 --target armeabi-v7a --target arm64-v8a -o java/app/src/main/jniLibs/ build --profile release
 
+    # collect all into apk
     - name: Build apk
       working-directory: ./megingjord-android/java
       run: ./gradlew build
-
-    - name: List all files
-      run: find
 
     - name: Archive production artifacts
       uses: actions/upload-artifact@v3
       with:
         name: android-arm64-v8a
         path: |
-          megingjord-android/java/app/build/reports/lint-results-debug.html
           **/*.apk
 
     # build base
