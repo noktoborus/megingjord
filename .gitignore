@@ -21,3 +21,5 @@ terminal.ini
 megingjord-android/java/.gradle
 megingjord-android/java/app/build
 megingjord-android/java/app/src/main/jniLibs
+megingjord-android/java/app/.idea/
+megingjord-android/java/app/local.properties
