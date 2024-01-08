@@ -43,6 +43,10 @@ impl MapPainter {
 }
 
 impl MapPainter {
+    fn set_color(&mut self, color: egui::Color32) {
+        self.current.color = color;
+    }
+
     fn handle_paint(&mut self, response: &Response, projector: &Projector) {
         if response.clicked_by(egui::PointerButton::Primary) {
             println!("clicled");
@@ -68,8 +72,11 @@ impl MapPainter {
     }
 
     fn draw_lines(&self, painter: Painter, projector: &Projector) {
+        for line in [self.completed.iter(), [self.current.clone()].iter()]
+            .into_iter()
+            .flatten()
         {
-            let mut points = self.current.points.iter();
+            let mut points = line.points.iter();
             if let Some(first) = points.next() {
                 let mut prev_point = first;
                 for point in points {
@@ -78,28 +85,9 @@ impl MapPainter {
                             projector.project(*prev_point).to_pos2(),
                             projector.project(*point).to_pos2(),
                         ],
-                        (2., self.current.color),
+                        (2., line.color),
                     );
                     prev_point = point;
-                }
-            }
-        }
-
-        {
-            for line in self.completed.iter() {
-                let mut points = line.points.iter();
-                if let Some(first) = points.next() {
-                    let mut prev_point = first;
-                    for point in points {
-                        painter.line_segment(
-                            [
-                                projector.project(*prev_point).to_pos2(),
-                                projector.project(*point).to_pos2(),
-                            ],
-                            (2., line.color),
-                        );
-                        prev_point = point;
-                    }
                 }
             }
         }
@@ -108,6 +96,8 @@ impl MapPainter {
 
 pub struct MapPainterPlugin {
     painter: Rc<RefCell<MapPainter>>,
+    active_color: egui::Color32,
+    show_palette: bool,
 }
 
 impl Default for MapPainterPlugin {
@@ -116,40 +106,99 @@ impl Default for MapPainterPlugin {
     }
 }
 
+const BUTTON_SIZE: egui::Vec2 = egui::Vec2::new(28.0, 28.0);
+const SPACER_SIZE: f32 = 16.0;
+
 impl MapPainterPlugin {
     pub fn new() -> Self {
         Self {
             painter: Rc::new(RefCell::new(MapPainter::new())),
+            active_color: egui::Color32::RED,
+            show_palette: false,
         }
     }
 
-    fn ui_edit(&self, ui: &mut Ui) {
-        if ui.button(RichText::new("🗙").heading()).clicked() {
+    fn palette_ui(&mut self, ui: &mut Ui) {
+        let colors_and_keys = [
+            (egui::Color32::RED, egui::Key::Num1),
+            (egui::Color32::BLUE, egui::Key::Num2),
+            (egui::Color32::GREEN, egui::Key::Num3),
+            (egui::Color32::BROWN, egui::Key::Num4),
+        ];
+
+        for (color, key) in colors_and_keys.iter() {
+            let color_button = egui::Button::new(format!("{}", key.name())).fill(*color);
+
+            if ui.add_sized(BUTTON_SIZE, color_button).clicked() || ui.input(|i| i.key_pressed(*key)) {
+                self.active_color = *color;
+                self.painter.borrow_mut().set_color(*color);
+                self.show_palette = false;
+            }
+        }
+    }
+
+    fn show_palette(&mut self, window_ui: &Ui) {
+        Window::new("Palette")
+            .collapsible(false)
+            .resizable(false)
+            .title_bar(false)
+            .anchor(Align2::LEFT_TOP, [54.0, 60.0])
+            .show(window_ui.ctx(), |ui| {
+                self.palette_ui(ui);
+
+                if window_ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    self.show_palette = false;
+                }
+            });
+    }
+
+    fn ui_edit(&mut self, ui: &mut Ui) {
+        if ui
+            .add_sized(BUTTON_SIZE, egui::Button::new(RichText::new("🗙").heading()))
+            .clicked()
+        {
             self.painter.borrow_mut().painting_mode_enabled = false;
         }
-    }
 
-    fn ui_short(&self, ui: &mut Ui) {
-        if ui.button(RichText::new("📓").heading()).clicked() {
-            self.painter.borrow_mut().painting_mode_enabled = true;
+        let color_button = egui::Button::new("").fill(self.active_color);
+
+        ui.add_space(SPACER_SIZE);
+
+        if ui.add_sized(BUTTON_SIZE, color_button).clicked() {
+            self.show_palette = true;
         }
     }
 
-    pub fn show_ui(&self, ui: &Ui) {
+    fn ui_short(&mut self, ui: &mut Ui) {
+        if ui
+            .add_sized(BUTTON_SIZE, egui::Button::new(RichText::new("📓").heading()))
+            .clicked()
+        {
+            self.painter.borrow_mut().painting_mode_enabled = true;
+            self.show_palette = false;
+        }
+    }
+
+    pub fn show_ui(&mut self, ui: &Ui) {
         Window::new("Painter")
             .collapsible(false)
             .resizable(false)
             .title_bar(false)
-            .anchor(Align2::LEFT_TOP, [20., 20.])
-            .show(ui.ctx(), |ui| {
+            .anchor(Align2::LEFT_TOP, [10., 10.])
+            .show(ui.ctx(), |window_ui| {
                 if self.painter.borrow().painting_mode_enabled {
-                    self.ui_edit(ui);
-                } else {
-                    self.ui_short(ui);
-                }
+                    if window_ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        if !self.show_palette {
+                            self.painter.borrow_mut().painting_mode_enabled = false;
+                        }
+                    }
 
-                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    self.painter.borrow_mut().painting_mode_enabled = false;
+                    self.ui_edit(window_ui);
+                    if self.show_palette {
+                        self.show_palette(ui);
+                    }
+                } else {
+                    self.ui_short(window_ui);
                 }
             });
     }

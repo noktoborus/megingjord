@@ -185,14 +185,14 @@ impl eframe::App for MyApp {
             ui.add(map);
 
             // Draw utility windows.
-            {
+            if !self.plugin_painter.painting_in_progress() {
                 zoom(ui, &mut self.map_memory);
                 if self.sources.len() > 1 {
                     controls(ui, &mut self.selected_source, &mut self.sources.keys());
                 }
                 acknowledge(ui, attribution);
-                self.plugin_painter.show_ui(ui);
             }
+            self.plugin_painter.show_ui(ui);
         });
 
         self.config_ctx
