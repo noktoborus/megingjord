@@ -1,6 +1,7 @@
 [build]
 dist = "target/trunk/"
 target = "megingjord/index.html"
+public_url = "./"
 
 [clean]
 dist = "target/trunk/"
