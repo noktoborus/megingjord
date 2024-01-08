@@ -175,7 +175,7 @@ impl eframe::App for MyApp {
             let tiles = self.sources.get_mut(&self.selected_source).unwrap().as_mut();
             let attribution = tiles.attribution();
 
-            ctx.set_pixels_per_point(1.2);
+            /* ctx.set_pixels_per_point(1.2); */
 
             // In egui, widgets are constructed and consumed in each frame.
             let map = Map::new(Some(tiles), &mut self.map_memory, myposition)
