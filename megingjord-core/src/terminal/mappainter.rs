@@ -1,82 +1,28 @@
 use egui::{Align2, Painter, Response, RichText, Ui, Window};
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 use walkers::{Plugin, Position, Projector};
 
-pub struct MapPainterData {
-    current: RefCell<Vec<Position>>,
-    completed: RefCell<Vec<Vec<Position>>>,
-    painting_mode_enabled: Cell<bool>,
-    ignore_painting: Cell<bool>,
-}
-
-pub struct MapPainterUi {
-    data: Rc<MapPainterData>,
-}
-
-impl MapPainterUi {
-    pub fn new() -> Self {
-        MapPainterUi {
-            data: Rc::new(MapPainterData {
-                current: RefCell::new(Vec::new()),
-                completed: RefCell::new(Vec::new()),
-                painting_mode_enabled: Cell::new(false),
-                ignore_painting: Cell::new(false),
-            }),
-        }
-    }
-
-    pub fn painting_in_progress(&self) -> bool {
-        self.data.painting_mode_enabled.get()
-    }
-
-    fn show_edit(&self, ui: &Ui) {
-        Window::new("Painter")
-            .collapsible(false)
-            .resizable(false)
-            .title_bar(false)
-            .anchor(Align2::LEFT_TOP, [20., 20.])
-            .show(ui.ctx(), |ui| {
-                if ui.button(RichText::new("🗙").heading()).clicked() {
-                    self.data.painting_mode_enabled.set(false);
-                }
-            });
-    }
-
-    pub fn show_short(&self, ui: &Ui) {
-        Window::new("Painter")
-            .collapsible(false)
-            .resizable(false)
-            .title_bar(false)
-            .anchor(Align2::LEFT_TOP, [20., 20.])
-            .show(ui.ctx(), |ui| {
-                if ui.button(RichText::new("📓").heading()).clicked() {
-                    self.data.painting_mode_enabled.set(true);
-                }
-            });
-    }
-
-    pub fn show_ui(&self, ui: &Ui) {
-        if self.data.painting_mode_enabled.get() {
-            self.show_edit(ui);
-        } else {
-            self.show_short(ui);
-        }
-    }
-}
-
-pub struct MapPainter {
-    state: Rc<MapPainterData>,
+struct MapPainter {
+    current: Vec<Position>,
+    completed: Vec<Vec<Position>>,
+    painting_mode_enabled: bool,
+    ignore_painting: bool,
 }
 
 impl MapPainter {
-    pub fn new(state: &MapPainterUi) -> Self {
+    fn new() -> Self {
         Self {
-            state: Rc::clone(&state.data),
+            current: Vec::new(),
+            completed: Vec::new(),
+            painting_mode_enabled: false,
+            ignore_painting: false,
         }
     }
+}
 
-    fn handle_paint(&self, response: &Response, projector: &Projector) {
+impl MapPainter {
+    fn handle_paint(&mut self, response: &Response, projector: &Projector) {
         if response.clicked_by(egui::PointerButton::Primary) {
             println!("clicled");
         }
@@ -86,31 +32,23 @@ impl MapPainter {
                 .hover_pos()
                 .map(|x| projector.reverse(x - response.rect.center()))
             {
-                self.state.current.borrow_mut().push(offset);
+                self.current.push(offset);
             }
         }
 
         if response.drag_released_by(egui::PointerButton::Primary) {
-            {
-                let current_bind = self.state.current.borrow();
-                let mut completed_bind = self.state.completed.borrow_mut();
-                completed_bind.push(current_bind.clone());
-            }
-            {
-                self.state.current.borrow_mut().clear();
-            }
+            self.completed.push(self.current.clone());
+            self.current.clear();
         }
     }
 
-    fn discard_last_paint(&self) {
-        let mut current_bind = self.state.current.borrow_mut();
-        current_bind.clear();
+    fn discard_last_paint(&mut self) {
+        self.current.clear();
     }
 
     fn draw_lines(&self, painter: Painter, projector: &Projector) {
         {
-            let binding = self.state.current.borrow();
-            let mut points = binding.iter();
+            let mut points = self.current.iter();
             if let Some(first) = points.next() {
                 let mut prev_point = first;
                 for point in points {
@@ -127,8 +65,7 @@ impl MapPainter {
         }
 
         {
-            let binding = self.state.completed.borrow();
-            for line in binding.iter() {
+            for line in self.completed.iter() {
                 let mut points = line.iter();
                 if let Some(first) = points.next() {
                     let mut prev_point = first;
@@ -148,21 +85,70 @@ impl MapPainter {
     }
 }
 
-impl Plugin for MapPainter {
+pub struct MapPainterPlugin {
+    painter: Rc<RefCell<MapPainter>>,
+}
+
+impl MapPainterPlugin {
+    pub fn new() -> Self {
+        Self {
+            painter: Rc::new(RefCell::new(MapPainter::new())),
+        }
+    }
+
+    fn ui_edit(&self, ui: &mut Ui) {
+        if ui.button(RichText::new("🗙").heading()).clicked() {
+            self.painter.borrow_mut().painting_mode_enabled = false;
+        }
+    }
+
+    fn ui_short(&self, ui: &mut Ui) {
+        if ui.button(RichText::new("📓").heading()).clicked() {
+            self.painter.borrow_mut().painting_mode_enabled = true;
+        }
+    }
+
+    pub fn show_ui(&self, ui: &Ui) {
+        Window::new("Painter")
+            .collapsible(false)
+            .resizable(false)
+            .title_bar(false)
+            .anchor(Align2::LEFT_TOP, [20., 20.])
+            .show(ui.ctx(), |ui| {
+                if self.painter.borrow().painting_mode_enabled {
+                    self.ui_edit(ui);
+                } else {
+                    self.ui_short(ui);
+                }
+
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    self.painter.borrow_mut().painting_mode_enabled = false;
+                }
+            });
+    }
+
+    pub fn painting_in_progress(&self) -> bool {
+        self.painter.borrow().painting_mode_enabled
+    }
+}
+
+impl Plugin for &MapPainterPlugin {
     fn draw(&self, response: &Response, painter: Painter, projector: &Projector, gesture_handled: bool) {
-        if self.state.painting_mode_enabled.get() {
-            if !self.state.ignore_painting.get() {
-                self.handle_paint(response, projector);
+        let mut mappainter = self.painter.borrow_mut();
+
+        if mappainter.painting_mode_enabled {
+            if !mappainter.ignore_painting {
+                mappainter.handle_paint(response, projector);
             }
 
             if gesture_handled {
-                self.discard_last_paint();
-                self.state.ignore_painting.set(true);
+                mappainter.discard_last_paint();
+                mappainter.ignore_painting = true;
             } else if response.drag_released_by(egui::PointerButton::Primary) {
-                self.state.ignore_painting.set(false);
+                mappainter.ignore_painting = false;
             }
         }
 
-        self.draw_lines(painter, projector);
+        mappainter.draw_lines(painter, projector);
     }
 }

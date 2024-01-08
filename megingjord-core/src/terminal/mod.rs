@@ -63,7 +63,7 @@ pub struct MyApp {
     selected_source: Source,
     map_memory: MapMemory,
     config_ctx: config::ConfigContext,
-    plugin_painter: mappainter::MapPainterUi,
+    plugin_painter: mappainter::MapPainterPlugin,
 }
 
 impl MyApp {
@@ -76,7 +76,7 @@ impl MyApp {
             selected_source: default_source,
             map_memory: MapMemory::default(),
             config_ctx: config::ConfigContext::new("terminal.ini".to_string()),
-            plugin_painter: mappainter::MapPainterUi::new(),
+            plugin_painter: mappainter::MapPainterPlugin::new(),
         };
 
         instance.config_load();
@@ -180,7 +180,7 @@ impl eframe::App for MyApp {
             // In egui, widgets are constructed and consumed in each frame.
             let map = Map::new(Some(tiles), &mut self.map_memory, myposition)
                 .drag_gesture(!self.plugin_painter.painting_in_progress())
-                .with_plugin(mappainter::MapPainter::new(&self.plugin_painter));
+                .with_plugin(&self.plugin_painter);
 
             ui.add(map);
 
