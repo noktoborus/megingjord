@@ -85,7 +85,7 @@ impl MapPainter {
                             projector.project(*prev_point).to_pos2(),
                             projector.project(*point).to_pos2(),
                         ],
-                        (2., line.color),
+                        (2.5, line.color),
                     );
                     prev_point = point;
                 }
