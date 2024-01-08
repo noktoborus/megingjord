@@ -22,7 +22,7 @@ Run:
 $ trunk serve
 ```
 
-# Build for Android
+# Build for Android (not work correcty now)
 
 ```
 $ cd megingjord-android
