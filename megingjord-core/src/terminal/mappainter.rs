@@ -3,9 +3,30 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use walkers::{Plugin, Position, Projector};
 
+#[derive(Clone)]
+struct DrawedLine {
+    color: egui::Color32,
+    points: Vec<Position>,
+}
+
+impl Default for DrawedLine {
+    fn default() -> Self {
+        Self {
+            points: Vec::new(),
+            color: egui::Color32::RED,
+        }
+    }
+}
+
+impl DrawedLine {
+    fn clear(&mut self) {
+        self.points.clear()
+    }
+}
+
 struct MapPainter {
-    current: Vec<Position>,
-    completed: Vec<Vec<Position>>,
+    current: DrawedLine,
+    completed: Vec<DrawedLine>,
     painting_mode_enabled: bool,
     ignore_painting: bool,
 }
@@ -13,7 +34,7 @@ struct MapPainter {
 impl MapPainter {
     fn new() -> Self {
         Self {
-            current: Vec::new(),
+            current: Default::default(),
             completed: Vec::new(),
             painting_mode_enabled: false,
             ignore_painting: false,
@@ -32,7 +53,7 @@ impl MapPainter {
                 .hover_pos()
                 .map(|x| projector.reverse(x - response.rect.center()))
             {
-                self.current.push(offset);
+                self.current.points.push(offset);
             }
         }
 
@@ -48,7 +69,7 @@ impl MapPainter {
 
     fn draw_lines(&self, painter: Painter, projector: &Projector) {
         {
-            let mut points = self.current.iter();
+            let mut points = self.current.points.iter();
             if let Some(first) = points.next() {
                 let mut prev_point = first;
                 for point in points {
@@ -57,7 +78,7 @@ impl MapPainter {
                             projector.project(*prev_point).to_pos2(),
                             projector.project(*point).to_pos2(),
                         ],
-                        (2., egui::Color32::RED),
+                        (2., self.current.color),
                     );
                     prev_point = point;
                 }
@@ -66,7 +87,7 @@ impl MapPainter {
 
         {
             for line in self.completed.iter() {
-                let mut points = line.iter();
+                let mut points = line.points.iter();
                 if let Some(first) = points.next() {
                     let mut prev_point = first;
                     for point in points {
@@ -75,7 +96,7 @@ impl MapPainter {
                                 projector.project(*prev_point).to_pos2(),
                                 projector.project(*point).to_pos2(),
                             ],
-                            (2., egui::Color32::BLUE),
+                            (2., line.color),
                         );
                         prev_point = point;
                     }
@@ -87,6 +108,12 @@ impl MapPainter {
 
 pub struct MapPainterPlugin {
     painter: Rc<RefCell<MapPainter>>,
+}
+
+impl Default for MapPainterPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MapPainterPlugin {
