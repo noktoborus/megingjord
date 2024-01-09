@@ -215,6 +215,7 @@ impl eframe::App for MyApp {
         } else {
             Position::from_lat_lon(0.0, 0.0)
         };
+        let center = self.map_memory.detached().unwrap_or(myposition);
 
         CentralPanel::default().frame(rimless).show(ctx, |ui| {
             let tiles = self.sources.get_mut(&self.selected_source).unwrap().as_mut();
@@ -237,14 +238,11 @@ impl eframe::App for MyApp {
                     controls(ui, &mut self.selected_source, &mut self.sources.keys());
                 }
                 acknowledge(ui, attribution);
-                geolocation::GeoLocationPlugin::show_ui(ui, &mut self.map_memory, geolocation);
+                geolocation::GeoLocationPlugin::show_ui(ui, &mut self.map_memory, geolocation, center);
             }
             self.plugin_painter.show_ui(ui);
         });
 
-        self.config_ctx.config_update(
-            self.map_memory.zoom_get(),
-            Some(self.map_memory.detached().unwrap_or(myposition)),
-        );
+        self.config_ctx.config_update(self.map_memory.zoom_get(), Some(center));
     }
 }

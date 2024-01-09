@@ -1,6 +1,6 @@
 use crate::terminal::GeoLocation;
 
-use egui::{Align2, Button, Color32, Painter, Response, RichText, Ui, Vec2, Window};
+use egui::{Align2, Area, Button, Color32, Painter, Response, RichText, Ui, Vec2, Window};
 use geographiclib_rs::{DirectGeodesic, Geodesic};
 use walkers::{MapMemory, Plugin, Position, Projector};
 
@@ -15,8 +15,8 @@ impl GeoLocationPlugin {
         Self { geolocation }
     }
 
-    pub fn show_ui(ui: &Ui, map_memory: &mut MapMemory, geolocation: Option<GeoLocation>) {
-        if let Some(geolocation) = geolocation {
+    pub fn show_ui(ui: &Ui, map_memory: &mut MapMemory, geolocation: Option<GeoLocation>, center: Position) {
+        if geolocation.is_some() {
             Window::new("GeoLocation")
                 .collapsible(false)
                 .resizable(false)
@@ -29,7 +29,7 @@ impl GeoLocationPlugin {
                         if window_ui.add_sized(BUTTON_SIZE, button).clicked() {
                             map_memory.follow_my_position();
                         }
-
+                        /*
                         window_ui.label(
                             RichText::new(format!(
                                 "{:.8}, {:.8}",
@@ -38,9 +38,17 @@ impl GeoLocationPlugin {
                             ))
                             .heading(),
                         );
+                        */
                     });
                 });
         }
+        Area::new("Center position")
+            .anchor(Align2::LEFT_TOP, [126., 10.])
+            .show(ui.ctx(), |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!("{:.6}, {:.6}", center.lat(), center.lon())).heading());
+                });
+            });
     }
 }
 
