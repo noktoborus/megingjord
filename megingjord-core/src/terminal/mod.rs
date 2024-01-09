@@ -1,7 +1,9 @@
 pub mod config;
+pub mod geolocation;
 pub mod local_osm_tiles;
 pub mod mappainter;
 
+use core::cell::Cell;
 use egui::Align2;
 use egui::Area;
 use egui::CentralPanel;
@@ -13,6 +15,7 @@ use egui::RichText;
 use egui::Ui;
 use egui::Window;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use walkers::sources::Attribution;
 use walkers::HttpOptions;
 use walkers::Map;
@@ -21,10 +24,18 @@ use walkers::Position;
 use walkers::Tiles;
 use walkers::TilesManager;
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsCast;
+
+#[derive(Debug, Clone, Copy)]
+pub struct GeoLocation {
+    position: Position,
+    accuracy: f32,
+}
+
 fn http_options() -> HttpOptions {
     HttpOptions {
-        cache: if cfg!(target_arch = "wasm32") || std::env::var("NO_HTTP_CACHE").is_ok()
-        {
+        cache: if cfg!(target_arch = "wasm32") || std::env::var("NO_HTTP_CACHE").is_ok() {
             None
         } else {
             Some(".cache".into())
@@ -65,6 +76,7 @@ pub struct MyApp {
     map_memory: MapMemory,
     config_ctx: config::ConfigContext,
     plugin_painter: mappainter::MapPainterPlugin,
+    geo: Arc<Mutex<Cell<Option<GeoLocation>>>>,
 }
 
 impl MyApp {
@@ -78,11 +90,38 @@ impl MyApp {
             map_memory: MapMemory::default(),
             config_ctx: config::ConfigContext::new("terminal.ini".to_string()),
             plugin_painter: mappainter::MapPainterPlugin::new(),
+            geo: Arc::new(Mutex::new(Cell::new(None))),
         };
 
         instance.config_load();
 
+        #[cfg(target_arch = "wasm32")]
+        instance.watch_geolocation();
+
         instance
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn watch_geolocation(&mut self) {
+        let geolocation = web_sys::window().unwrap().navigator().geolocation().unwrap();
+        let geo_store_mutexed = Arc::clone(&self.geo);
+
+        let geo_callback = wasm_bindgen::prelude::Closure::<dyn FnMut(_)>::new(move |e: web_sys::Position| {
+            let coords = e.coords();
+
+            let geo = GeoLocation {
+                position: Position::from_lat_lon(coords.latitude(), coords.longitude()),
+                accuracy: coords.accuracy() as f32,
+            };
+            geo_store_mutexed.lock().unwrap().set(Some(geo));
+        });
+
+        let _ = geolocation.watch_position(geo_callback.as_ref().unchecked_ref());
+        geo_callback.forget();
+    }
+
+    fn probe_geolocation(&self) -> Option<GeoLocation> {
+        self.geo.lock().unwrap().get()
     }
 
     fn config_load(&mut self) {
@@ -165,11 +204,16 @@ pub fn controls(ui: &Ui, selected_source: &mut Source, possible_sources: &mut dy
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
-        let myposition = Position::from_lat_lon(0.0, 0.0);
-
         let rimless = Frame {
             fill: ctx.style().visuals.panel_fill,
             ..Default::default()
+        };
+
+        let geolocation = self.probe_geolocation();
+        let myposition = if let Some(geolocation) = geolocation {
+            geolocation.position
+        } else {
+            Position::from_lat_lon(0.0, 0.0)
         };
 
         CentralPanel::default().frame(rimless).show(ctx, |ui| {
@@ -181,7 +225,8 @@ impl eframe::App for MyApp {
             // In egui, widgets are constructed and consumed in each frame.
             let map = Map::new(Some(tiles), &mut self.map_memory, myposition)
                 .drag_gesture(!self.plugin_painter.painting_in_progress())
-                .with_plugin(&self.plugin_painter);
+                .with_plugin(&self.plugin_painter)
+                .with_plugin(geolocation::GeoLocationPlugin::new(geolocation));
 
             ui.add(map);
 
@@ -192,6 +237,7 @@ impl eframe::App for MyApp {
                     controls(ui, &mut self.selected_source, &mut self.sources.keys());
                 }
                 acknowledge(ui, attribution);
+                geolocation::GeoLocationPlugin::show_ui(ui, &mut self.map_memory, geolocation);
             }
             self.plugin_painter.show_ui(ui);
         });
