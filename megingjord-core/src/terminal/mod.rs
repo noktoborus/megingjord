@@ -23,7 +23,8 @@ use walkers::TilesManager;
 
 fn http_options() -> HttpOptions {
     HttpOptions {
-        cache: if cfg!(target_os = "android") && std::env::var("NO_HTTP_CACHE").is_ok() {
+        cache: if cfg!(target_arch = "wasm32") || std::env::var("NO_HTTP_CACHE").is_ok()
+        {
             None
         } else {
             Some(".cache".into())
