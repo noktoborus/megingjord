@@ -242,7 +242,9 @@ impl eframe::App for MyApp {
             self.plugin_painter.show_ui(ui);
         });
 
-        self.config_ctx
-            .config_update(self.map_memory.zoom_get(), self.map_memory.detached());
+        self.config_ctx.config_update(
+            self.map_memory.zoom_get(),
+            Some(self.map_memory.detached().unwrap_or(myposition)),
+        );
     }
 }
