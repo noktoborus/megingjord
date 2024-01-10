@@ -242,13 +242,13 @@ impl MyApp {
 
 pub fn acknowledge(ui: &Ui, attribution: Attribution) {
     Area::new("Acknowledge")
-        .anchor(Align2::CENTER_BOTTOM, [0., -10.])
+        .anchor(Align2::RIGHT_BOTTOM, [-5., -5.])
         .show(ui.ctx(), |ui| {
             ui.horizontal(|ui| {
                 if let Some(logo) = attribution.logo_light {
-                    ui.add(Image::new(logo).max_height(30.0).max_width(80.0));
+                    ui.add(Image::new(logo).max_height(20.0).max_width(60.0));
                 }
-                ui.hyperlink_to(attribution.text, attribution.url);
+                ui.hyperlink_to(RichText::new(attribution.text).size(12.0), attribution.url);
             });
         });
 }
