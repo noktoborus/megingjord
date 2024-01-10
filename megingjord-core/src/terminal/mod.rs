@@ -15,6 +15,7 @@ use egui::RichText;
 use egui::Ui;
 use egui::Window;
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use walkers::sources::Attribution;
 use walkers::HttpOptions;
@@ -72,6 +73,53 @@ fn sources(egui_ctx: Context) -> (HashMap<Source, Box<dyn TilesManager + Send>>,
     (sources, default_selected)
 }
 
+/// Wasm32 window.location.href info
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UrlHashInfo {
+    position: Position,
+    zoom: u8,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct UrlHashParseError;
+
+impl FromStr for UrlHashInfo {
+    type Err = UrlHashParseError;
+
+    fn from_str(instr: &str) -> Result<Self, Self::Err> {
+        let mut zoom: u8 = 0;
+        let mut lat: f64 = 0.;
+        let mut lon: f64 = 0.;
+
+        scanf::sscanf!(instr, "#map={}/{}/{}", zoom, lat, lon).map_err(|_| UrlHashParseError)?;
+        Ok(Self {
+            position: Position::from_lat_lon(lat, lon),
+            zoom,
+        })
+    }
+}
+
+impl Default for UrlHashInfo {
+    fn default() -> Self {
+        Self {
+            position: Position::from_lat_lon(0.0, 0.0),
+            zoom: 0,
+        }
+    }
+}
+
+impl std::fmt::Display for UrlHashInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "#map={}/{:.6}/{:.6}",
+            self.zoom,
+            self.position.lat(),
+            self.position.lon()
+        )
+    }
+}
+
 pub struct MyApp {
     sources: HashMap<Source, Box<dyn TilesManager + Send>>,
     selected_source: Source,
@@ -79,6 +127,8 @@ pub struct MyApp {
     config_ctx: config::ConfigContext,
     plugin_painter: mappainter::MapPainterPlugin,
     geo: Arc<Mutex<Cell<Option<GeoLocation>>>>,
+    #[cfg(target_arch = "wasm32")]
+    href: UrlHashInfo,
 }
 
 impl MyApp {
@@ -93,14 +143,51 @@ impl MyApp {
             config_ctx: config::ConfigContext::new("terminal.ini".to_string()),
             plugin_painter: mappainter::MapPainterPlugin::new(),
             geo: Arc::new(Mutex::new(Cell::new(None))),
+            #[cfg(target_arch = "wasm32")]
+            href: Default::default(),
         };
 
         instance.config_load();
 
         #[cfg(target_arch = "wasm32")]
-        instance.watch_geolocation();
+        {
+            instance.update_from_hash();
+            instance.watch_geolocation();
+        }
 
         instance
+    }
+
+    /// Set browser's url hash
+    #[cfg(target_arch = "wasm32")]
+    fn update_hash(&mut self, position: Position, zoom: u8) -> bool {
+        let href = UrlHashInfo { position, zoom };
+
+        if href != self.href {
+            self.href = href;
+
+            let _ = web_sys::window().map(|window| {
+                let _ = window.location().set_hash(format!("{}", href).as_str());
+                return true;
+            });
+        }
+        false
+    }
+
+    /// Update current position to coordinates from browser's url hash
+    #[cfg(target_arch = "wasm32")]
+    fn update_from_hash(&mut self) {
+        web_sys::window().map(|window| {
+            if let Ok(href) = window.location().hash() {
+                if let Ok(href) = UrlHashInfo::from_str(href.as_str()) {
+                    if href != self.href {
+                        self.map_memory.center_at(href.position);
+                        self.zoom_to(href.zoom);
+                        self.href = href
+                    }
+                }
+            }
+        });
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -126,21 +213,25 @@ impl MyApp {
         self.geo.lock().unwrap().get()
     }
 
+    fn zoom_to(&mut self, zoom_value: u8) {
+        while self.map_memory.zoom_get() < zoom_value {
+            if self.map_memory.zoom_in().is_err() {
+                break;
+            }
+        }
+
+        while self.map_memory.zoom_get() > zoom_value {
+            if self.map_memory.zoom_out().is_err() {
+                break;
+            }
+        }
+    }
+
     fn config_load(&mut self) {
         let config = self.config_ctx.config_load();
 
         if let Some(zoom_value) = config.zoom {
-            while self.map_memory.zoom_get() < zoom_value {
-                if self.map_memory.zoom_in().is_err() {
-                    break;
-                }
-            }
-
-            while self.map_memory.zoom_get() > zoom_value {
-                if self.map_memory.zoom_out().is_err() {
-                    break;
-                }
-            }
+            self.zoom_to(zoom_value);
         }
 
         if let Some(lat_lon) = config.lat_lon {
@@ -245,6 +336,10 @@ impl eframe::App for MyApp {
             self.plugin_painter.show_ui(ui);
         });
 
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.update_hash(center, self.map_memory.zoom_get());
+        }
         self.config_ctx.config_update(self.map_memory.zoom_get(), Some(center));
     }
 }
