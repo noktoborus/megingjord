@@ -48,10 +48,6 @@ impl MapPainter {
     }
 
     fn handle_paint(&mut self, response: &Response, projector: &Projector) {
-        if response.clicked_by(egui::PointerButton::Primary) {
-            println!("clicled");
-        }
-
         if response.dragged_by(egui::PointerButton::Primary) {
             if let Some(offset) = response
                 .hover_pos()
@@ -129,7 +125,12 @@ impl MapPainterPlugin {
         for (color, key) in colors_and_keys.iter() {
             let color_button = egui::Button::new(format!("{}", key.name())).fill(*color);
 
-            if ui.add_sized(BUTTON_SIZE, color_button).clicked() || ui.input(|i| i.key_pressed(*key)) {
+            if ui
+                .add_sized(BUTTON_SIZE, color_button)
+                .on_hover_text(format!("Shortcut: {}", key.name()))
+                .clicked()
+                || ui.input(|i| i.key_pressed(*key))
+            {
                 self.active_color = *color;
                 self.painter.borrow_mut().set_color(*color);
                 self.show_palette = false;
@@ -155,7 +156,9 @@ impl MapPainterPlugin {
     fn ui_edit(&mut self, ui: &mut Ui) {
         if ui
             .add_sized(BUTTON_SIZE, egui::Button::new(RichText::new("🗙").heading()))
+            .on_hover_text("Cancel painting\nShortcut: D or Escape")
             .clicked()
+            || ui.input(|i| i.key_pressed(egui::Key::D))
         {
             self.painter.borrow_mut().painting_mode_enabled = false;
         }
@@ -164,15 +167,22 @@ impl MapPainterPlugin {
 
         ui.add_space(SPACER_SIZE);
 
-        if ui.add_sized(BUTTON_SIZE, color_button).clicked() {
-            self.show_palette = true;
+        if ui
+            .add_sized(BUTTON_SIZE, color_button)
+            .on_hover_text("Choose color\nShortcut: C")
+            .clicked()
+            || ui.input(|i| i.key_pressed(egui::Key::C))
+        {
+            self.show_palette = !self.show_palette;
         }
     }
 
     fn ui_short(&mut self, ui: &mut Ui) {
         if ui
             .add_sized(BUTTON_SIZE, egui::Button::new(RichText::new("📓").heading()))
+            .on_hover_text("Painting mode\nShortcut: D")
             .clicked()
+            || ui.input(|i| i.key_pressed(egui::Key::D))
         {
             self.painter.borrow_mut().painting_mode_enabled = true;
             self.show_palette = false;
