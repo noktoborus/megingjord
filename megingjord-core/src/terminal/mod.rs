@@ -235,7 +235,7 @@ impl MyApp {
         }
 
         if let Some(lat_lon) = config.lat_lon {
-            self.map_memory.center_at(lat_lon);
+            self.map_memory.center_at(lat_lon.to_position());
         }
     }
 }
@@ -340,6 +340,9 @@ impl eframe::App for MyApp {
         {
             self.update_hash(center, self.map_memory.zoom_get());
         }
-        self.config_ctx.config_update(self.map_memory.zoom_get(), Some(center));
+        self.config_ctx.config_update(
+            self.map_memory.zoom_get(),
+            Some(config::Position::from_position(center)),
+        );
     }
 }
