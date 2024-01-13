@@ -202,11 +202,11 @@ impl MapPainterPlugin {
                 if has_lines {
                     if ui
                         .add_sized(BUTTON_SIZE, egui::Button::new(RichText::new("S").heading()))
-                        .on_hover_text("Send figure\nShortcut: CTRL+S")
+                        .on_hover_text("Send figure\nShortcut: SHIFT+S")
                         .clicked()
                         || ui.input_mut(|i| {
                             i.consume_shortcut(&egui::KeyboardShortcut {
-                                modifiers: egui::Modifiers::CTRL,
+                                modifiers: egui::Modifiers::SHIFT,
                                 logical_key: egui::Key::S,
                             })
                         })
