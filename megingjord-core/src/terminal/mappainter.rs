@@ -15,10 +15,7 @@ impl Point {
     }
 
     fn from_position(other: walkers::Position) -> Self {
-        Self {
-            0: other.lat(),
-            1: other.lon(),
-        }
+        Self(other.lat(), other.lon())
     }
 }
 
@@ -37,7 +34,7 @@ impl Color {
             b: other.b(),
         }
     }
-    fn to_color32(&self) -> egui::Color32 {
+    fn to_color32(self) -> egui::Color32 {
         egui::Color32::from_rgb(self.r, self.g, self.b)
     }
 }
