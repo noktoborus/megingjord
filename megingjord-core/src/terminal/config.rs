@@ -2,10 +2,11 @@ use scanf::sscanf;
 use std::fmt::Display;
 use std::str::FromStr;
 
-#[derive(PartialEq, Clone, Copy, Default)]
+#[derive(PartialEq, Clone, Default)]
 pub struct Config {
     pub lat_lon: Option<Position>,
     pub zoom: Option<u8>,
+    pub state: Option<String>,
 }
 
 #[derive(PartialEq, Clone, Copy, Default)]
@@ -192,15 +193,6 @@ impl ConfigContext {
         }
     }
 
-    pub fn config_read(&mut self) -> Config {
-        let reader = ConfigReadWriter::read(&self.inifile);
-
-        Config {
-            lat_lon: reader.get("lat_lon"),
-            zoom: reader.get("zoom"),
-        }
-    }
-
     pub fn config_load(&mut self) -> Config {
         log::info!("loading config: {}", self.inifile);
 
@@ -208,16 +200,18 @@ impl ConfigContext {
         let config = Config {
             lat_lon: reader.get("lat_lon"),
             zoom: reader.get("zoom"),
+            state: reader.get("state"),
         };
 
-        self.previous_state = config;
+        self.previous_state = config.clone();
         config
     }
 
-    pub fn config_update(&mut self, zoom: u8, lat_lon: Option<Position>) {
+    pub fn config_update(&mut self, zoom: u8, lat_lon: Option<Position>, mappainter_state: Option<String>) {
         let new_config = Config {
             lat_lon,
             zoom: Some(zoom),
+            state: mappainter_state.clone(),
         };
 
         if self.saver_guard == 0 {
@@ -230,6 +224,7 @@ impl ConfigContext {
             ConfigReadWriter::new()
                 .set("zoom", new_config.zoom)
                 .set("lat_lon", new_config.lat_lon)
+                .set("state", mappainter_state)
                 .write(&self.inifile);
 
             self.previous_state = new_config;

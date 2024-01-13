@@ -1,19 +1,107 @@
 use egui::{Align2, Area, Color32, Key, Painter, Response, RichText, Ui, Window};
+use scanf::sscanf;
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
+use std::fmt::Display;
 use std::rc::Rc;
-use walkers::{Plugin, Position, Projector};
+use walkers::{Plugin, Projector};
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+struct Point(f64, f64);
+
+impl Point {
+    fn to_position(&self) -> walkers::Position {
+        walkers::Position::from_lat_lon(self.0, self.1)
+    }
+
+    fn from_position(other: walkers::Position) -> Self {
+        Self {
+            0: other.lat(),
+            1: other.lon(),
+        }
+    }
+}
+
+#[derive(Clone, Default, Copy)]
+struct Color {
+    r: u8,
+    g: u8,
+    b: u8,
+}
+
+impl Color {
+    fn from_color32(other: egui::Color32) -> Self {
+        Self {
+            r: other.r(),
+            g: other.g(),
+            b: other.b(),
+        }
+    }
+    fn to_color32(&self) -> egui::Color32 {
+        egui::Color32::from_rgb(self.r, self.g, self.b)
+    }
+}
+
+impl Display for Color {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#{:02x}{:02x}{:02x}", self.r, self.g, self.b)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ColorParseError;
+
+impl Display for ColorParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::str::FromStr for Color {
+    type Err = ColorParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut r: u8 = 0;
+        let mut g: u8 = 0;
+        let mut b: u8 = 0;
+
+        sscanf!(s, "#{:x}{:x}{:x}", r, g, b).map_err(|_| ColorParseError)?;
+
+        Ok(Self { r, g, b })
+    }
+}
+
+impl Serialize for Color {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for Color {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 struct DrawedLine {
-    color: egui::Color32,
-    points: Vec<Position>,
+    color: Color,
+    points: Vec<Point>,
 }
 
 impl Default for DrawedLine {
     fn default() -> Self {
         Self {
             points: Vec::new(),
-            color: egui::Color32::RED,
+            color: Color::from_color32(egui::Color32::RED),
         }
     }
 }
@@ -24,24 +112,44 @@ impl DrawedLine {
     }
 }
 
-struct MapPainter {
-    /// Current line.
-    /// Move points to completed at first 'drag_released' event
-    current: DrawedLine,
+#[derive(Serialize, Deserialize)]
+struct PainterLines {
     /// Completed lines
     completed: Vec<DrawedLine>,
     /// Forward history
     forward_history: Vec<DrawedLine>,
+}
+
+struct MapPainter {
+    /// Current line.
+    /// Move points to completed at first 'drag_released' event
+    current: DrawedLine,
+    lines: PainterLines,
     painting_mode_enabled: bool,
     ignore_painting: bool,
 }
 
 impl MapPainter {
-    fn new() -> Self {
-        Self {
-            current: Default::default(),
+    fn apply_state_json(state_json: Option<String>) -> PainterLines {
+        if let Some(state_json) = state_json {
+            match serde_json::from_str(&state_json) {
+                Ok(state) => {
+                    return state;
+                }
+                Err(err) => println!("Deserialize MapPainter state error: {:?}", err),
+            }
+        }
+
+        PainterLines {
             completed: Vec::new(),
             forward_history: Vec::new(),
+        }
+    }
+
+    fn new(state_json: Option<String>) -> Self {
+        Self {
+            current: Default::default(),
+            lines: Self::apply_state_json(state_json),
             painting_mode_enabled: false,
             ignore_painting: false,
         }
@@ -49,7 +157,7 @@ impl MapPainter {
 }
 
 impl MapPainter {
-    fn set_color(&mut self, color: egui::Color32) {
+    fn set_color(&mut self, color: Color) {
         self.current.color = color;
     }
 
@@ -59,14 +167,14 @@ impl MapPainter {
                 .hover_pos()
                 .map(|x| projector.reverse(x - response.rect.center()))
             {
-                self.current.points.push(offset);
+                self.current.points.push(Point::from_position(offset));
             }
         }
 
         if response.drag_released_by(egui::PointerButton::Primary) {
-            self.completed.push(self.current.clone());
+            self.lines.completed.push(self.current.clone());
             self.current.clear();
-            self.forward_history.clear();
+            self.lines.forward_history.clear();
         }
     }
 
@@ -75,7 +183,7 @@ impl MapPainter {
     }
 
     fn draw_lines(&self, painter: Painter, projector: &Projector) {
-        for line in [self.completed.iter(), [self.current.clone()].iter()]
+        for line in [self.lines.completed.iter(), [self.current.clone()].iter()]
             .into_iter()
             .flatten()
         {
@@ -85,10 +193,10 @@ impl MapPainter {
                 for point in points {
                     painter.line_segment(
                         [
-                            projector.project(*prev_point).to_pos2(),
-                            projector.project(*point).to_pos2(),
+                            projector.project(prev_point.to_position()).to_pos2(),
+                            projector.project(point.to_position()).to_pos2(),
                         ],
-                        (2.5, line.color),
+                        (2.5, line.color.to_color32()),
                     );
                     prev_point = point;
                 }
@@ -98,14 +206,14 @@ impl MapPainter {
 
     /// Undo last drawed line
     fn undo_line(&mut self) {
-        if let Some(last_line) = self.completed.pop() {
-            self.forward_history.push(last_line);
+        if let Some(last_line) = self.lines.completed.pop() {
+            self.lines.forward_history.push(last_line);
         }
     }
 
     fn redo_line(&mut self) {
-        if let Some(next_line) = self.forward_history.pop() {
-            self.completed.push(next_line);
+        if let Some(next_line) = self.lines.forward_history.pop() {
+            self.lines.completed.push(next_line);
         }
     }
 }
@@ -118,7 +226,7 @@ pub struct MapPainterPlugin {
 
 impl Default for MapPainterPlugin {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 
@@ -126,11 +234,23 @@ const BUTTON_SIZE: egui::Vec2 = egui::Vec2::new(28.0, 28.0);
 const SPACER_SIZE: f32 = 16.0;
 
 impl MapPainterPlugin {
-    pub fn new() -> Self {
+    pub fn new(state_json: Option<String>) -> Self {
         Self {
-            painter: Rc::new(RefCell::new(MapPainter::new())),
+            painter: Rc::new(RefCell::new(MapPainter::new(state_json))),
             active_color: egui::Color32::RED,
             show_palette: false,
+        }
+    }
+
+    pub fn get_state_json(&self) -> Option<String> {
+        let painter = self.painter.borrow();
+
+        match serde_json::to_string(&painter.lines) {
+            Ok(json_string) => Some(json_string),
+            Err(err) => {
+                log::error!("Painter serialization problem: {:?}", err);
+                None
+            }
         }
     }
 
@@ -145,7 +265,7 @@ impl MapPainterPlugin {
                     .clicked()
                 {
                     self.active_color = *color;
-                    self.painter.borrow_mut().set_color(*color);
+                    self.painter.borrow_mut().set_color(Color::from_color32(*color));
                     self.show_palette = false;
                 }
             }
@@ -178,7 +298,7 @@ impl MapPainterPlugin {
             for (color, key) in colors_and_keys.iter() {
                 if ui.input(|i| i.key_pressed(*key)) {
                     self.active_color = *color;
-                    self.painter.borrow_mut().set_color(*color);
+                    self.painter.borrow_mut().set_color(Color::from_color32(*color));
                     self.show_palette = false;
                 }
             }
@@ -191,8 +311,8 @@ impl MapPainterPlugin {
 
             (
                 painter.painting_mode_enabled,
-                !painter.completed.is_empty(),
-                !painter.forward_history.is_empty(),
+                !painter.lines.completed.is_empty(),
+                !painter.lines.forward_history.is_empty(),
             )
         };
 

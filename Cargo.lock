@@ -2227,6 +2227,8 @@ dependencies = [
  "log",
  "renderer",
  "scanf",
+ "serde",
+ "serde_json",
  "tini",
  "walkers",
  "wasm-bindgen",

@@ -135,19 +135,28 @@ impl MyApp {
     pub fn new(egui_ctx: Context) -> Self {
         egui_extras::install_image_loaders(&egui_ctx);
         let (sources, default_source) = sources(egui_ctx.to_owned());
+        let mut config_ctx = config::ConfigContext::new("terminal.ini".to_string());
+
+        let config = config_ctx.config_load();
 
         let mut instance = Self {
             sources,
             selected_source: default_source,
             map_memory: MapMemory::default(),
-            config_ctx: config::ConfigContext::new("terminal.ini".to_string()),
-            plugin_painter: mappainter::MapPainterPlugin::new(),
+            config_ctx,
+            plugin_painter: mappainter::MapPainterPlugin::new(config.state),
             geo: Arc::new(Mutex::new(Cell::new(None))),
             #[cfg(target_arch = "wasm32")]
             href: Default::default(),
         };
 
-        instance.config_load();
+        if let Some(zoom_value) = config.zoom {
+            instance.zoom_to(zoom_value);
+        }
+
+        if let Some(lat_lon) = config.lat_lon {
+            instance.map_memory.center_at(lat_lon.to_position());
+        }
 
         #[cfg(target_arch = "wasm32")]
         {
@@ -224,18 +233,6 @@ impl MyApp {
             if self.map_memory.zoom_out().is_err() {
                 break;
             }
-        }
-    }
-
-    fn config_load(&mut self) {
-        let config = self.config_ctx.config_load();
-
-        if let Some(zoom_value) = config.zoom {
-            self.zoom_to(zoom_value);
-        }
-
-        if let Some(lat_lon) = config.lat_lon {
-            self.map_memory.center_at(lat_lon.to_position());
         }
     }
 }
@@ -343,6 +340,7 @@ impl eframe::App for MyApp {
         self.config_ctx.config_update(
             self.map_memory.zoom_get(),
             Some(config::Position::from_position(center)),
+            self.plugin_painter.get_state_json(),
         );
     }
 }
