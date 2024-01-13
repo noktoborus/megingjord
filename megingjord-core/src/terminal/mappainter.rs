@@ -316,7 +316,9 @@ impl MapPainterPlugin {
         Area::new("Edits")
             .anchor(Align2::LEFT_TOP, [16., 104.])
             .show(ui.ctx(), |ui| {
-                if has_lines {
+                if false
+                /*has_lines */
+                {
                     if ui
                         .add_sized(BUTTON_SIZE, egui::Button::new(RichText::new("S").heading()))
                         .on_hover_text("Send figure\nShortcut: SHIFT+S")
