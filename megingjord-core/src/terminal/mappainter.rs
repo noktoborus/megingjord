@@ -137,7 +137,7 @@ impl MapPainterPlugin {
     fn palette_ui(&mut self, ui: &mut Ui, colors_and_keys: Vec<(Color32, Key)>) {
         ui.horizontal(|ui| {
             for (color, key) in colors_and_keys.iter() {
-                let color_button = egui::Button::new(format!("{}", key.name())).fill(*color);
+                let color_button = egui::Button::new(key.name().to_string()).fill(*color);
 
                 if ui
                     .add_sized(BUTTON_SIZE, color_button)
@@ -293,10 +293,8 @@ impl MapPainterPlugin {
             .anchor(Align2::LEFT_TOP, [10., 10.])
             .show(ui.ctx(), |ui| {
                 if painting_mode {
-                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                        if !self.show_palette {
-                            self.painter.borrow_mut().painting_mode_enabled = false;
-                        }
+                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) && !self.show_palette {
+                        self.painter.borrow_mut().painting_mode_enabled = false;
                     }
                     self.ui_painting(ui);
                 } else {
