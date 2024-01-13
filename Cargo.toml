@@ -12,7 +12,7 @@ description = "Ambitious OSM data viewer"
 
 [workspace.dependencies]
 megingjord-core = { path = "megingjord-core" }
-eframe = "0.24"
+eframe = "0.25"
 log = "0.4"
 web-sys = "0.3.66"
 
