@@ -122,8 +122,9 @@ impl MapPainterPlugin {
             (egui::Color32::BROWN, egui::Key::Num4),
         ];
 
-        for (color, key) in colors_and_keys.iter() {
-            let color_button = egui::Button::new(format!("{}", key.name())).fill(*color);
+        ui.horizontal(|ui| {
+            for (color, key) in colors_and_keys.iter() {
+                let color_button = egui::Button::new(format!("{}", key.name())).fill(*color);
 
             if ui
                 .add_sized(BUTTON_SIZE, color_button)
