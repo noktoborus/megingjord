@@ -19,7 +19,7 @@ impl Point {
     }
 }
 
-#[derive(Clone, Default, Copy)]
+#[derive(Clone, Default, Copy, Serialize, Deserialize)]
 struct Color {
     r: u8,
     g: u8,
@@ -65,26 +65,6 @@ impl std::str::FromStr for Color {
         sscanf!(s, "#{:x}{:x}{:x}", r, g, b).map_err(|_| ColorParseError)?;
 
         Ok(Self { r, g, b })
-    }
-}
-
-impl Serialize for Color {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.to_string())
-    }
-}
-
-impl<'de> Deserialize<'de> for Color {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(serde::de::Error::custom)
     }
 }
 
