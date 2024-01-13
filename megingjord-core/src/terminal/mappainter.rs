@@ -270,14 +270,13 @@ impl MapPainterPlugin {
                         self.show_palette = false;
                     }
                 });
-        } else {
-            /* choose color without palette */
-            for (color, key) in colors_and_keys.iter() {
-                if ui.input(|i| i.key_pressed(*key)) {
-                    self.active_color = *color;
-                    self.painter.borrow_mut().set_color(Color::from_color32(*color));
-                    self.show_palette = false;
-                }
+        }
+        /* choose color without palette */
+        for (color, key) in colors_and_keys.iter() {
+            if ui.input(|i| i.key_pressed(*key)) {
+                self.active_color = *color;
+                self.painter.borrow_mut().set_color(Color::from_color32(*color));
+                self.show_palette = false;
             }
         }
     }
