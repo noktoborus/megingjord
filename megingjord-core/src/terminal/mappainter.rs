@@ -1,3 +1,4 @@
+use crate::terminal::geojson_exchange::GeoJsonExchange;
 use egui::{Align2, Area, Color32, Key, Painter, Response, RichText, Ui, Window};
 use scanf::sscanf;
 use serde::{Deserialize, Serialize};
@@ -6,35 +7,39 @@ use std::fmt::Display;
 use std::rc::Rc;
 use walkers::{Plugin, Projector};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Default, Debug, Copy)]
 struct Point(f64, f64);
 
 impl Point {
-    fn to_position(&self) -> walkers::Position {
+    fn to_position(self) -> walkers::Position {
         walkers::Position::from_lat_lon(self.0, self.1)
     }
 
     fn from_position(other: walkers::Position) -> Self {
         Self(other.lat(), other.lon())
     }
+
+    fn to_geo_vec2(self) -> Vec<f64> {
+        [self.0, self.1].to_vec()
+    }
 }
 
-#[derive(Clone, Default, Copy, Serialize, Deserialize)]
-struct Color {
+#[derive(Clone, Debug, Default, Copy, Serialize, Deserialize)]
+pub struct Color {
     r: u8,
     g: u8,
     b: u8,
 }
 
 impl Color {
-    fn from_color32(other: egui::Color32) -> Self {
+    pub fn from_color32(other: egui::Color32) -> Self {
         Self {
             r: other.r(),
             g: other.g(),
             b: other.b(),
         }
     }
-    fn to_color32(self) -> egui::Color32 {
+    pub fn to_color32(self) -> egui::Color32 {
         egui::Color32::from_rgb(self.r, self.g, self.b)
     }
 }
@@ -68,7 +73,7 @@ impl std::str::FromStr for Color {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct DrawedLine {
     color: Color,
     points: Vec<Point>,
@@ -87,6 +92,21 @@ impl DrawedLine {
     fn clear(&mut self) {
         self.points.clear()
     }
+
+    fn in_bbox(&self, bbox: &BoundaryBox) -> bool {
+        for point in &self.points {
+            if bbox.is_in(point) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn to_geometry(&self) -> geojson::Geometry {
+        geojson::Geometry::new(geojson::Value::LineString(
+            self.points.iter().map(|x| x.to_geo_vec2()).collect(),
+        ))
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -104,6 +124,14 @@ struct MapPainter {
     lines: PainterLines,
     painting_mode_enabled: bool,
     ignore_painting: bool,
+    /// boundary box to export lines
+    bbox: BoundaryBox,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+struct BBoxedLines {
+    bbox: BoundaryBox,
+    lines: Vec<DrawedLine>,
 }
 
 impl MapPainter {
@@ -129,11 +157,38 @@ impl MapPainter {
             lines: Self::apply_state_json(state_json),
             painting_mode_enabled: false,
             ignore_painting: false,
+            bbox: Default::default(),
         }
     }
 }
 
 impl MapPainter {
+    fn collect_lines(&self, bbox: BoundaryBox) -> geojson::FeatureCollection {
+        let mut features = Vec::new();
+
+        for line in self.lines.completed.iter() {
+            let mut properties = geojson::JsonObject::new();
+            properties.insert(String::from("color"), geojson::JsonValue::from(line.color.to_string()));
+            properties.insert(String::from("width"), geojson::JsonValue::from(2));
+
+            if line.in_bbox(&bbox) {
+                features.push(geojson::Feature {
+                    bbox: None,
+                    geometry: Some(line.to_geometry()),
+                    id: None,
+                    properties: Some(properties),
+                    foreign_members: None,
+                });
+            }
+        }
+
+        geojson::FeatureCollection {
+            bbox: Some(self.bbox.to_geo_vec4()),
+            features,
+            foreign_members: None,
+        }
+    }
+
     fn set_color(&mut self, color: Color) {
         self.current.color = color;
     }
@@ -199,6 +254,8 @@ pub struct MapPainterPlugin {
     painter: Rc<RefCell<MapPainter>>,
     active_color: egui::Color32,
     show_palette: bool,
+    /// BBox of selected area to export paints
+    selected_bbox: Option<BoundaryBox>,
 }
 
 impl Default for MapPainterPlugin {
@@ -216,6 +273,7 @@ impl MapPainterPlugin {
             painter: Rc::new(RefCell::new(MapPainter::new(state_json))),
             active_color: egui::Color32::RED,
             show_palette: false,
+            selected_bbox: None,
         }
     }
 
@@ -281,7 +339,7 @@ impl MapPainterPlugin {
         }
     }
 
-    fn show_ui_edit(&mut self, ui: &Ui) {
+    fn show_ui_edit(&mut self, ui: &Ui, exchange: &mut GeoJsonExchange) {
         let (painting_mode, has_lines, has_forward_history) = {
             let painter = self.painter.borrow();
 
@@ -295,9 +353,7 @@ impl MapPainterPlugin {
         Area::new("Edits")
             .anchor(Align2::LEFT_TOP, [16., 104.])
             .show(ui.ctx(), |ui| {
-                if false
-                /*has_lines */
-                {
+                if has_lines {
                     if ui
                         .add_sized(BUTTON_SIZE, egui::Button::new(RichText::new("S").heading()))
                         .on_hover_text("Send figure\nShortcut: SHIFT+S")
@@ -309,7 +365,11 @@ impl MapPainterPlugin {
                             })
                         })
                     {
-                        log::error!("Not implemented: Send figure");
+                        let mappainter = self.painter.borrow();
+                        let figures = mappainter.collect_lines(mappainter.bbox);
+
+                        self.selected_bbox = Some(mappainter.bbox);
+                        exchange.publish_data(figures.into());
                     }
                 } else {
                     ui.add_space(BUTTON_SIZE.x);
@@ -381,7 +441,7 @@ impl MapPainterPlugin {
         }
     }
 
-    pub fn show_ui(&mut self, ui: &Ui) {
+    pub fn show_ui(&mut self, ui: &Ui, exchange: &mut GeoJsonExchange) {
         let painting_mode = self.painter.borrow().painting_mode_enabled;
 
         Window::new("Painter")
@@ -403,7 +463,7 @@ impl MapPainterPlugin {
             self.show_ui_palette(ui);
         }
 
-        self.show_ui_edit(ui);
+        self.show_ui_edit(ui, exchange);
     }
 
     pub fn painting_in_progress(&self) -> bool {
@@ -411,9 +471,54 @@ impl MapPainterPlugin {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+struct BoundaryBox(Point, Point);
+
+impl BoundaryBox {
+    fn from_rect(rect: egui::Rect, projector: &Projector) -> Self {
+        let center = rect.center().to_vec2();
+        let zero = egui::Vec2::default();
+
+        Self(
+            Point::from_position(projector.unproject(zero - center)),
+            Point::from_position(projector.unproject(center)),
+        )
+    }
+
+    fn is_in(&self, point: &Point) -> bool {
+        let a = self.0;
+        let c = self.1;
+
+        (a.0 > point.0 && a.1 < point.1) && (c.0 < point.0 && c.1 > point.1)
+    }
+
+    fn to_geo_vec4(self) -> Vec<f64> {
+        let a = self.0;
+        let c = self.1;
+
+        [a.0, a.1, c.0, c.1].to_vec()
+    }
+}
+
 impl Plugin for &MapPainterPlugin {
     fn run(&mut self, response: &Response, painter: Painter, projector: &Projector) {
         let mut mappainter = self.painter.borrow_mut();
+
+        mappainter.bbox = BoundaryBox::from_rect(painter.clip_rect(), projector);
+
+        if let Some(selected_bbox) = self.selected_bbox {
+            let a = projector.project(selected_bbox.0.to_position()).to_pos2();
+            let c = projector.project(selected_bbox.1.to_position()).to_pos2();
+            let b = egui::Pos2::new(a.x, c.y);
+            let d = egui::Pos2::new(c.x, a.y);
+            painter.line_segment([a, c], (0.5, egui::Color32::BLACK.gamma_multiply(0.60)));
+            painter.line_segment([b, d], (0.5, egui::Color32::BLACK.gamma_multiply(0.60)));
+
+            painter.line_segment([a, b], (0.5, egui::Color32::BLACK.gamma_multiply(0.60)));
+            painter.line_segment([b, c], (0.5, egui::Color32::BLACK.gamma_multiply(0.60)));
+            painter.line_segment([c, d], (0.5, egui::Color32::BLACK.gamma_multiply(0.60)));
+            painter.line_segment([d, a], (0.5, egui::Color32::BLACK.gamma_multiply(0.60)));
+        }
 
         if mappainter.painting_mode_enabled {
             if !mappainter.ignore_painting {

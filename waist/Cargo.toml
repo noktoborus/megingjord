@@ -1,0 +1,15 @@
+[package]
+name = "waist"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+axum = { version = "0.7.4", features = ["http2"] }
+axum-server = "0.6.0"
+tokio = { version = "1.35.1", features = ["rt-multi-thread"] }
+geojson = { workspace = true }

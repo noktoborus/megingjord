@@ -1,4 +1,6 @@
 pub mod config;
+pub mod geojson_dispatcher;
+pub mod geojson_exchange;
 pub mod geolocation;
 pub mod local_osm_tiles;
 pub mod mappainter;
@@ -126,6 +128,8 @@ pub struct MyApp {
     map_memory: MapMemory,
     config_ctx: config::ConfigContext,
     plugin_painter: mappainter::MapPainterPlugin,
+    exchange: geojson_exchange::GeoJsonExchange,
+    geojson_dispatcher: geojson_dispatcher::GeoJsonDispatcher,
     geo: Arc<Mutex<Cell<Option<GeoLocation>>>>,
     #[cfg(target_arch = "wasm32")]
     href: UrlHashInfo,
@@ -145,6 +149,8 @@ impl MyApp {
             map_memory: MapMemory::default(),
             config_ctx,
             plugin_painter: mappainter::MapPainterPlugin::new(config.state),
+            exchange: Default::default(),
+            geojson_dispatcher: Default::default(),
             geo: Arc::new(Mutex::new(Cell::new(None))),
             #[cfg(target_arch = "wasm32")]
             href: Default::default(),
@@ -299,6 +305,7 @@ impl eframe::App for MyApp {
             ..Default::default()
         };
 
+        self.exchange.update_status();
         let geolocation = self.probe_geolocation();
         let myposition = if let Some(geolocation) = geolocation {
             geolocation.position
@@ -317,20 +324,23 @@ impl eframe::App for MyApp {
             let map = Map::new(Some(tiles), &mut self.map_memory, myposition)
                 .drag_gesture(!self.plugin_painter.painting_in_progress())
                 .with_plugin(&self.plugin_painter)
-                .with_plugin(geolocation::GeoLocationPlugin::new(geolocation));
+                .with_plugin(geolocation::GeoLocationPlugin::new(geolocation))
+                .with_plugin(&self.geojson_dispatcher);
 
             ui.add(map);
 
             // Draw utility windows.
             if !self.plugin_painter.painting_in_progress() {
+                self.exchange.show_ui(ui);
                 zoom(ui, &mut self.map_memory);
                 if self.sources.len() > 1 {
                     controls(ui, &mut self.selected_source, &mut self.sources.keys());
                 }
                 acknowledge(ui, attribution);
+                self.geojson_dispatcher.show_ui(ui);
                 geolocation::GeoLocationPlugin::show_ui(ui, &mut self.map_memory, geolocation, center);
             }
-            self.plugin_painter.show_ui(ui);
+            self.plugin_painter.show_ui(ui, &mut self.exchange);
         });
 
         #[cfg(target_arch = "wasm32")]
