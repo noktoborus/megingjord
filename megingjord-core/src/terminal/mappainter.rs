@@ -142,7 +142,7 @@ impl MapPainter {
         if response.dragged_by(egui::PointerButton::Primary) {
             if let Some(offset) = response
                 .hover_pos()
-                .map(|x| projector.reverse(x - response.rect.center()))
+                .map(|x| projector.unproject(x - response.rect.center()))
             {
                 self.current.points.push(Point::from_position(offset));
             }
@@ -412,7 +412,7 @@ impl MapPainterPlugin {
 }
 
 impl Plugin for &MapPainterPlugin {
-    fn draw(&self, response: &Response, painter: Painter, projector: &Projector, gesture_handled: bool) {
+    fn draw(&self, response: &Response, painter: Painter, projector: &Projector) {
         let mut mappainter = self.painter.borrow_mut();
 
         if mappainter.painting_mode_enabled {
@@ -420,7 +420,7 @@ impl Plugin for &MapPainterPlugin {
                 mappainter.handle_paint(response, projector);
             }
 
-            if gesture_handled {
+            if response.changed() {
                 mappainter.discard_last_paint();
                 mappainter.ignore_painting = true;
             } else if response.drag_released_by(egui::PointerButton::Primary) {

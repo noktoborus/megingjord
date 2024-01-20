@@ -53,11 +53,11 @@ impl GeoLocationPlugin {
 }
 
 impl Plugin for GeoLocationPlugin {
-    fn draw(&self, _response: &Response, painter: Painter, projector: &Projector, _gesture_handled: bool) {
+    fn draw(&self, _response: &Response, painter: Painter, projector: &Projector) {
         let wgs84 = Geodesic::wgs84();
 
         if let Some(geolocation) = self.geolocation {
-            let center = projector.reverse(Vec2 { x: 0.0, y: 0.0 });
+            let center = projector.unproject(Vec2 { x: 0.0, y: 0.0 });
             let position = projector.project(geolocation.position);
             let (accuracy_lat, accuracy_lon, _) =
                 wgs84.direct(center.lat(), center.lon(), 0.0, geolocation.accuracy.into());
