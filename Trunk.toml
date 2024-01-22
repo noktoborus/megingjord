@@ -1,9 +1,5 @@
 [build]
-dist = "target/trunk/"
 target = "megingjord/index.html"
-
-[clean]
-dist = "target/trunk/"
 
 [serve]
 address = "0.0.0.0"
