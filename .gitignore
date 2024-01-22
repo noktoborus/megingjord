@@ -17,6 +17,9 @@ Cargo.lock
 terminal.ini
 .cache
 
+# wasm-related
+megingjord/dist
+
 # android-related
 megingjord-android/java/.gradle
 megingjord-android/java/app/build
