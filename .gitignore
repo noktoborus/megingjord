@@ -17,6 +17,8 @@ Cargo.lock
 terminal.ini
 .cache
 
+.cargo
+
 # wasm-related
 megingjord/dist
 
