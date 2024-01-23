@@ -53,7 +53,7 @@ impl GeoLocationPlugin {
 }
 
 impl Plugin for GeoLocationPlugin {
-    fn draw(&self, _response: &Response, painter: Painter, projector: &Projector) {
+    fn run(&mut self, _response: &Response, painter: Painter, projector: &Projector) {
         let wgs84 = Geodesic::wgs84();
 
         if let Some(geolocation) = self.geolocation {

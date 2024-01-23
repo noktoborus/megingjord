@@ -3799,7 +3799,7 @@ dependencies = [
 [[package]]
 name = "walkers"
 version = "0.17.0"
-source = "git+https://github.com/noktoborus/walkers.git?branch=feature#d97cfec0128b7bfae35e4e7c4112e48bdc76dee6"
+source = "git+https://github.com/noktoborus/walkers.git?branch=feature#b5143ad8c7e2adf24e0e9e093ab50ab706ece43d"
 dependencies = [
  "egui",
  "egui_extras",

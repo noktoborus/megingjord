@@ -412,7 +412,7 @@ impl MapPainterPlugin {
 }
 
 impl Plugin for &MapPainterPlugin {
-    fn draw(&self, response: &Response, painter: Painter, projector: &Projector) {
+    fn run(&mut self, response: &Response, painter: Painter, projector: &Projector) {
         let mut mappainter = self.painter.borrow_mut();
 
         if mappainter.painting_mode_enabled {
