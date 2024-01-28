@@ -183,7 +183,7 @@ impl MyApp {
 
             let _ = web_sys::window().map(|window| {
                 let _ = window.location().set_hash(format!("{}", href).as_str());
-                return true;
+                true
             });
         }
         false
@@ -192,7 +192,7 @@ impl MyApp {
     /// Update current position to coordinates from browser's url hash
     #[cfg(target_arch = "wasm32")]
     fn update_from_hash(&mut self) {
-        web_sys::window().map(|window| {
+        if let Some(window) = web_sys::window() {
             if let Ok(href) = window.location().hash() {
                 if let Ok(href) = UrlHashInfo::from_str(href.as_str()) {
                     if href != self.href {
@@ -202,7 +202,7 @@ impl MyApp {
                     }
                 }
             }
-        });
+        };
     }
 
     #[cfg(target_arch = "wasm32")]

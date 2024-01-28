@@ -171,9 +171,3 @@ impl GeoJsonExchange {
             });
     }
 }
-
-impl Drop for GeoJsonExchange {
-    fn drop(&mut self) {
-        while let Some(_) = self.threads_ctx.pop() {}
-    }
-}
