@@ -323,7 +323,7 @@ impl eframe::App for MyApp {
             // In egui, widgets are constructed and consumed in each frame.
             let map = Map::new(Some(tiles), &mut self.map_memory, myposition)
                 .drag_gesture(!self.plugin_painter.painting_in_progress())
-                .with_plugin(&self.plugin_painter)
+                .with_plugin(&mut self.plugin_painter)
                 .with_plugin(geolocation::GeoLocationPlugin::new(geolocation))
                 .with_plugin(&self.geojson_dispatcher);
 
@@ -340,7 +340,7 @@ impl eframe::App for MyApp {
                 self.geojson_dispatcher.show_ui(ui);
                 geolocation::GeoLocationPlugin::show_ui(ui, &mut self.map_memory, geolocation, center);
             }
-            self.plugin_painter.show_ui(ui, &mut self.exchange);
+            self.plugin_painter.show_ui(ui);
         });
 
         #[cfg(target_arch = "wasm32")]

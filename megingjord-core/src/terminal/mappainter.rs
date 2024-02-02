@@ -1,10 +1,7 @@
-use crate::terminal::geojson_exchange::GeoJsonExchange;
 use egui::{Align2, Area, Color32, Key, Painter, Response, RichText, Ui, Window};
 use scanf::sscanf;
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
 use std::fmt::Display;
-use std::rc::Rc;
 use walkers::{Plugin, Projector};
 
 #[derive(Clone, Serialize, Deserialize, Default, Debug, Copy)]
@@ -126,6 +123,8 @@ struct MapPainter {
     ignore_painting: bool,
     /// boundary box to export lines
     bbox: BoundaryBox,
+    /// jsons ready to export
+    export: Vec<geojson::GeoJson>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -158,6 +157,7 @@ impl MapPainter {
             painting_mode_enabled: false,
             ignore_painting: false,
             bbox: Default::default(),
+            export: Default::default(),
         }
     }
 }
@@ -251,7 +251,7 @@ impl MapPainter {
 }
 
 pub struct MapPainterPlugin {
-    painter: Rc<RefCell<MapPainter>>,
+    painter: MapPainter,
     active_color: egui::Color32,
     show_palette: bool,
     /// BBox of selected area to export paints
@@ -270,7 +270,7 @@ const SPACER_SIZE: f32 = 16.0;
 impl MapPainterPlugin {
     pub fn new(state_json: Option<String>) -> Self {
         Self {
-            painter: Rc::new(RefCell::new(MapPainter::new(state_json))),
+            painter: MapPainter::new(state_json),
             active_color: egui::Color32::RED,
             show_palette: false,
             selected_bbox: None,
@@ -278,9 +278,7 @@ impl MapPainterPlugin {
     }
 
     pub fn get_state_json(&self) -> Option<String> {
-        let painter = self.painter.borrow();
-
-        match serde_json::to_string(&painter.lines) {
+        match serde_json::to_string(&self.painter.lines) {
             Ok(json_string) => Some(json_string),
             Err(err) => {
                 log::error!("Painter serialization problem: {:?}", err);
@@ -300,7 +298,7 @@ impl MapPainterPlugin {
                     .clicked()
                 {
                     self.active_color = *color;
-                    self.painter.borrow_mut().set_color(Color::from_color32(*color));
+                    self.painter.set_color(Color::from_color32(*color));
                     self.show_palette = false;
                 }
             }
@@ -333,20 +331,18 @@ impl MapPainterPlugin {
         for (color, key) in colors_and_keys.iter() {
             if ui.input(|i| i.key_pressed(*key)) {
                 self.active_color = *color;
-                self.painter.borrow_mut().set_color(Color::from_color32(*color));
+                self.painter.set_color(Color::from_color32(*color));
                 self.show_palette = false;
             }
         }
     }
 
-    fn show_ui_edit(&mut self, ui: &Ui, exchange: &mut GeoJsonExchange) {
+    fn show_ui_edit(&mut self, ui: &Ui) {
         let (painting_mode, has_lines, has_forward_history) = {
-            let painter = self.painter.borrow();
-
             (
-                painter.painting_mode_enabled,
-                !painter.lines.completed.is_empty(),
-                !painter.lines.forward_history.is_empty(),
+                self.painter.painting_mode_enabled,
+                !self.painter.lines.completed.is_empty(),
+                !self.painter.lines.forward_history.is_empty(),
             )
         };
 
@@ -365,11 +361,10 @@ impl MapPainterPlugin {
                             })
                         })
                     {
-                        let mappainter = self.painter.borrow();
-                        let figures = mappainter.collect_lines(mappainter.bbox);
+                        let figures = self.painter.collect_lines(self.painter.bbox);
 
-                        self.selected_bbox = Some(mappainter.bbox);
-                        exchange.publish_data(figures.into());
+                        self.selected_bbox = Some(self.painter.bbox);
+                        self.painter.export.push(figures.into());
                     }
                 } else {
                     ui.add_space(BUTTON_SIZE.x);
@@ -383,7 +378,7 @@ impl MapPainterPlugin {
                             .clicked()
                             || ui.input(|i| i.key_pressed(egui::Key::R))
                         {
-                            self.painter.borrow_mut().redo_line();
+                            self.painter.redo_line();
                         }
                     } else {
                         ui.add_space(BUTTON_SIZE.x);
@@ -396,7 +391,7 @@ impl MapPainterPlugin {
                             .clicked()
                             || ui.input(|i| i.key_pressed(egui::Key::U))
                         {
-                            self.painter.borrow_mut().undo_line();
+                            self.painter.undo_line();
                         }
                     } else {
                         ui.add_space(BUTTON_SIZE.x);
@@ -412,7 +407,7 @@ impl MapPainterPlugin {
             .clicked()
             || ui.input(|i| i.key_pressed(egui::Key::D))
         {
-            self.painter.borrow_mut().painting_mode_enabled = false;
+            self.painter.painting_mode_enabled = false;
             self.show_palette = false;
         }
 
@@ -437,12 +432,12 @@ impl MapPainterPlugin {
             .clicked()
             || ui.input(|i| i.key_pressed(egui::Key::D))
         {
-            self.painter.borrow_mut().painting_mode_enabled = true;
+            self.painter.painting_mode_enabled = true;
         }
     }
 
-    pub fn show_ui(&mut self, ui: &Ui, exchange: &mut GeoJsonExchange) {
-        let painting_mode = self.painter.borrow().painting_mode_enabled;
+    pub fn show_ui(&mut self, ui: &Ui) {
+        let painting_mode = self.painter.painting_mode_enabled;
 
         Window::new("Painter")
             .collapsible(false)
@@ -452,7 +447,7 @@ impl MapPainterPlugin {
             .show(ui.ctx(), |ui| {
                 if painting_mode {
                     if ui.input(|i| i.key_pressed(egui::Key::Escape)) && !self.show_palette {
-                        self.painter.borrow_mut().painting_mode_enabled = false;
+                        self.painter.painting_mode_enabled = false;
                     }
                     self.ui_painting(ui);
                 } else {
@@ -463,11 +458,11 @@ impl MapPainterPlugin {
             self.show_ui_palette(ui);
         }
 
-        self.show_ui_edit(ui, exchange);
+        self.show_ui_edit(ui);
     }
 
     pub fn painting_in_progress(&self) -> bool {
-        self.painter.borrow().painting_mode_enabled
+        self.painter.painting_mode_enabled
     }
 }
 
@@ -500,11 +495,9 @@ impl BoundaryBox {
     }
 }
 
-impl Plugin for &MapPainterPlugin {
+impl Plugin for &mut MapPainterPlugin {
     fn run(&mut self, response: &Response, painter: Painter, projector: &Projector) {
-        let mut mappainter = self.painter.borrow_mut();
-
-        mappainter.bbox = BoundaryBox::from_rect(painter.clip_rect(), projector);
+        self.painter.bbox = BoundaryBox::from_rect(painter.clip_rect(), projector);
 
         if let Some(selected_bbox) = self.selected_bbox {
             let a = projector.project(selected_bbox.0.to_position()).to_pos2();
@@ -520,19 +513,19 @@ impl Plugin for &MapPainterPlugin {
             painter.line_segment([d, a], (0.5, egui::Color32::BLACK.gamma_multiply(0.60)));
         }
 
-        if mappainter.painting_mode_enabled {
-            if !mappainter.ignore_painting {
-                mappainter.handle_paint(response, projector);
+        if self.painter.painting_mode_enabled {
+            if !self.painter.ignore_painting {
+                self.painter.handle_paint(response, projector);
             }
 
             if response.changed() {
-                mappainter.discard_last_paint();
-                mappainter.ignore_painting = true;
+                self.painter.discard_last_paint();
+                self.painter.ignore_painting = true;
             } else if response.drag_released_by(egui::PointerButton::Primary) {
-                mappainter.ignore_painting = false;
+                self.painter.ignore_painting = false;
             }
         }
 
-        mappainter.draw_lines(painter, projector);
+        self.painter.draw_lines(painter, projector);
     }
 }
