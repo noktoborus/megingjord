@@ -163,10 +163,11 @@ impl MapPainter {
 }
 
 impl MapPainter {
-    fn collect_lines(&self, bbox: BoundaryBox) -> geojson::FeatureCollection {
+    fn collect_and_remove_lines(&mut self, bbox: BoundaryBox) -> geojson::FeatureCollection {
         let mut features = Vec::new();
+        let mut to_remove = Vec::new();
 
-        for line in self.lines.completed.iter() {
+        for (idx, line) in self.lines.completed.iter().enumerate() {
             let mut properties = geojson::JsonObject::new();
             properties.insert(String::from("color"), geojson::JsonValue::from(line.color.to_string()));
             properties.insert(String::from("width"), geojson::JsonValue::from(2));
@@ -179,8 +180,13 @@ impl MapPainter {
                     properties: Some(properties),
                     foreign_members: None,
                 });
+                to_remove.push(idx);
             }
         }
+        to_remove.reverse();
+        to_remove.iter().for_each(|idx| {
+            self.lines.completed.remove(*idx);
+        });
 
         geojson::FeatureCollection {
             bbox: Some(self.bbox.to_geo_vec4()),
@@ -372,7 +378,7 @@ impl MapPainterPlugin {
                             })
                         })
                     {
-                        let figures = self.painter.collect_lines(self.painter.bbox);
+                        let figures = self.painter.collect_and_remove_lines(self.painter.bbox);
 
                         if !figures.features.is_empty() {
                             self.selected_bbox = Some(self.painter.bbox);
