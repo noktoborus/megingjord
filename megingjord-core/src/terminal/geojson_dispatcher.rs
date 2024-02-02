@@ -173,13 +173,11 @@ impl GeoJsonDispatcher {
         if self.jsons.is_empty() {
             return;
         }
-        Window::new("Geometry Box")
-            .anchor(Align2::RIGHT_TOP, [0., 30.])
+        Window::new("")
+            .anchor(Align2::RIGHT_TOP, [-10., 30.])
             .interactable(true)
             .show(ui.ctx(), |ui| {
-                ui.vertical_centered(|ui| {
-                    self.jsons.iter_mut().for_each(|entry| entry.show_ui(ui));
-                })
+                self.jsons.iter_mut().for_each(|entry| entry.show_ui(ui));
             });
     }
 
