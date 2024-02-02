@@ -1,5 +1,4 @@
 use egui::{Align2, Area, Color32, Key, Painter, Response, RichText, Ui, Window};
-use scanf::sscanf;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use walkers::{Plugin, Projector};
@@ -60,13 +59,13 @@ impl std::str::FromStr for Color {
     type Err = ColorParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut r: u8 = 0;
-        let mut g: u8 = 0;
-        let mut b: u8 = 0;
+        let rgb = hex_rgb::convert_hexcode_to_rgb(s.to_string()).map_err(|_| ColorParseError)?;
 
-        sscanf!(s, "#{:x}{:x}{:x}", r, g, b).map_err(|_| ColorParseError)?;
-
-        Ok(Self { r, g, b })
+        Ok(Self {
+            r: rgb.red,
+            g: rgb.green,
+            b: rgb.blue,
+        })
     }
 }
 
