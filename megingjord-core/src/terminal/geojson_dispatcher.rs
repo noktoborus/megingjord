@@ -179,4 +179,10 @@ impl GeoJsonDispatcher {
                 })
             });
     }
+
+    pub fn upload_json_array(&mut self, jsons: &mut Vec<geojson::GeoJson>) {
+        while let Some(json) = jsons.pop() {
+            self.jsons.push(Entry::new_upload(self.jsons.len().to_string(), json))
+        }
+    }
 }

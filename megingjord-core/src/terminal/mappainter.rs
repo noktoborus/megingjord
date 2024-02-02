@@ -287,6 +287,17 @@ impl MapPainterPlugin {
         }
     }
 
+    pub fn export_jsons(&mut self) -> Option<Vec<geojson::GeoJson>> {
+        if self.painter.export.is_empty() {
+            None
+        } else {
+            let mut jsons = Vec::new();
+
+            jsons.append(&mut self.painter.export);
+            Some(jsons)
+        }
+    }
+
     fn palette_ui(&mut self, ui: &mut Ui, colors_and_keys: Vec<(Color32, Key)>) {
         ui.horizontal(|ui| {
             for (color, key) in colors_and_keys.iter() {
@@ -363,8 +374,10 @@ impl MapPainterPlugin {
                     {
                         let figures = self.painter.collect_lines(self.painter.bbox);
 
-                        self.selected_bbox = Some(self.painter.bbox);
-                        self.painter.export.push(figures.into());
+                        if !figures.features.is_empty() {
+                            self.selected_bbox = Some(self.painter.bbox);
+                            self.painter.export.push(figures.into());
+                        }
                     }
                 } else {
                     ui.add_space(BUTTON_SIZE.x);

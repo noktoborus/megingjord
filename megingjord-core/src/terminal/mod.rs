@@ -329,6 +329,9 @@ impl eframe::App for MyApp {
 
             ui.add(map);
 
+            if let Some(mut jsons) = self.plugin_painter.export_jsons() {
+                self.geojson_dispatcher.upload_json_array(&mut jsons);
+            }
             // Draw utility windows.
             if !self.plugin_painter.painting_in_progress() {
                 self.exchange.show_ui(ui);
