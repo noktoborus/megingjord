@@ -1,5 +1,5 @@
 use super::mappainter::Color;
-use egui::{Align2, Painter, Response, Ui, Window};
+use egui::{Align2, Painter, Response, RichText, Ui, Window};
 use geojson::GeoJson;
 use walkers::{Plugin, Projector};
 
@@ -37,8 +37,11 @@ impl Entry {
         }
     }
 
-    pub fn show_ui(&self, ui: &mut Ui) {
-        ui.label(format!("{}: {:?}", self.id, self.status));
+    pub fn show_ui(&mut self, ui: &mut Ui) {
+        ui.checkbox(
+            &mut self.visible,
+            RichText::new(format!("{}: {:?}", self.id, self.status)).heading(),
+        );
     }
 }
 
@@ -166,7 +169,7 @@ impl Plugin for &GeoJsonDispatcher {
 }
 
 impl GeoJsonDispatcher {
-    pub fn show_ui(&self, ui: &Ui) {
+    pub fn show_ui(&mut self, ui: &Ui) {
         if self.jsons.is_empty() {
             return;
         }
@@ -175,7 +178,7 @@ impl GeoJsonDispatcher {
             .interactable(true)
             .show(ui.ctx(), |ui| {
                 ui.vertical_centered(|ui| {
-                    self.jsons.iter().for_each(|entry| entry.show_ui(ui));
+                    self.jsons.iter_mut().for_each(|entry| entry.show_ui(ui));
                 })
             });
     }
