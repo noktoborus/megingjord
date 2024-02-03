@@ -1,17 +1,138 @@
 use super::mappainter::Color;
 use egui::{Align2, Painter, Response, RichText, Ui, Window};
 use geojson::GeoJson;
+use std::sync::{Arc, RwLock};
 use walkers::{Plugin, Projector};
 
-#[derive(Debug)]
+use reqwest::{header, Client, StatusCode};
+
+struct Task {}
+
+impl Task {
+    pub fn download(client: Client, jsonid: String) -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+
+            std::thread::spawn(move || runtime.block_on(async { Task::run_download(client, jsonid).await }));
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        wasm_bindgen_futures::spawn_local(async move { Task::get(client, jsonid).await });
+
+        Self {}
+    }
+
+    pub fn upload(client: Client, local_id: u32, entries: &Arc<RwLock<Vec<Entry>>>) -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+
+            let entries = Arc::clone(entries);
+
+            std::thread::spawn(move || runtime.block_on(async { Task::run_upload(client, local_id, entries).await }));
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        wasm_bindgen_futures::spawn_local(async move { Task::run_upload(client, local_id, entries).await });
+
+        Self {}
+    }
+
+    async fn run_download(client: Client, jsonid: String) {
+        match client.get(format!("http://127.0.0.1:3000/get/{}", jsonid)).send().await {
+            Ok(response) => {
+                if response.status() == StatusCode::OK {
+                    /* TaskResult::Received(response.json::<GeoJson>().await.unwrap()) */
+                } else {
+                    /* TaskResult::Error(format!("server returns code {}", response.status())) */
+                };
+            }
+            Err(_) => { /* TaskResult::Error(err.to_string()) */ }
+        }
+    }
+
+    async fn run_upload(client: Client, local_id: u32, entries: Arc<RwLock<Vec<Entry>>>) {
+        let json_body = entries
+            .write()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| entry.local_id == local_id)
+            .map(|entry| {
+                entry.status = EntryStatus::Uploading;
+                entry.json.as_ref().unwrap().to_string()
+            });
+
+        let status = if let Some(json_body) = json_body {
+            let response = client
+                .post("http://127.0.0.1:3000/new")
+                .header(header::CONTENT_TYPE, "application/geo+json")
+                .body(json_body)
+                .send()
+                .await;
+
+            match response {
+                Ok(response) => {
+                    if response.status() == StatusCode::OK {
+                        match response.text().await {
+                            Ok(identifier) => EntryStatus::Ready(identifier),
+                            Err(err) => EntryStatus::UploadError(format!("{}", err)),
+                        }
+                    } else {
+                        EntryStatus::UploadError(format!("server error code: {}", response.status()))
+                    }
+                }
+                Err(err) => EntryStatus::UploadError(format!("{}", err)),
+            }
+        } else {
+            EntryStatus::UploadError(format!("Nothing to upload: body is empty"))
+        };
+
+        match status {
+            EntryStatus::Ready(identifier) => {
+                if let Some(entry) = entries
+                    .write()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|entry| entry.local_id == local_id)
+                {
+                    entry.status = EntryStatus::Ready(identifier.clone());
+                    entry.id = identifier;
+                }
+            }
+            _ => {
+                if let Some(entry) = entries
+                    .write()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|entry| entry.local_id == local_id)
+                {
+                    entry.status = status;
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Default)]
 enum EntryStatus {
+    #[default]
     Wait,
-    Ready,
-    Upload,
-    Download,
+    Ready(String),
+    Downloading,
+    DownloadError,
+    Uploading,
+    UploadError(String),
 }
 
 struct Entry {
+    local_id: u32,
     id: String,
     json: Option<GeoJson>,
     visible: bool,
@@ -19,21 +140,23 @@ struct Entry {
 }
 
 impl Entry {
-    fn new_upload(id: String, json: GeoJson) -> Self {
+    fn new_with_id(local_id: u32, id: String) -> Self {
         Self {
-            id,
-            json: Some(json),
-            visible: true,
-            status: EntryStatus::Wait,
-        }
-    }
-
-    fn new_download(id: String) -> Self {
-        Self {
+            local_id,
             id,
             json: None,
             visible: true,
-            status: EntryStatus::Wait,
+            status: Default::default(),
+        }
+    }
+
+    fn new_with_json(local_id: u32, json: GeoJson) -> Self {
+        Self {
+            local_id,
+            id: "".to_string(),
+            json: Some(json.clone()),
+            visible: true,
+            status: Default::default(),
         }
     }
 
@@ -46,20 +169,37 @@ impl Entry {
 }
 
 pub struct GeoJsonDispatcher {
-    jsons: Vec<Entry>,
+    entries: Arc<RwLock<Vec<Entry>>>,
+    client: Client,
+    id_generator: u32,
 }
 
 impl GeoJsonDispatcher {
+    fn next_id(&mut self) -> u32 {
+        self.id_generator += 1;
+        self.id_generator
+    }
+
     pub fn new() -> Self {
-        Self { jsons: Vec::new() }
+        Self {
+            entries: Default::default(),
+            client: Default::default(),
+            id_generator: 1,
+        }
     }
 
     pub fn download(&mut self, id: String) {
-        self.jsons.push(Entry::new_download(id));
+        let local_id = self.next_id();
+
+        self.entries.write().unwrap().push(Entry::new_with_id(local_id, id));
     }
 
-    pub fn upload(&mut self, id: String, json: GeoJson) {
-        self.jsons.push(Entry::new_upload(id, json));
+    pub fn upload_json_array(&mut self, jsons: &mut Vec<geojson::GeoJson>) {
+        while let Some(json) = jsons.pop() {
+            let local_id = self.next_id();
+            self.entries.write().unwrap().push(Entry::new_with_json(local_id, json));
+            Task::upload(self.client.clone(), local_id, &self.entries);
+        }
     }
 }
 
@@ -152,7 +292,7 @@ impl GeoJsonDispatcher {
 
 impl Plugin for &GeoJsonDispatcher {
     fn run(&mut self, _response: &Response, painter: Painter, projector: &Projector) {
-        for entry in self.jsons.iter() {
+        for entry in self.entries.read().unwrap().iter() {
             if !entry.visible {
                 continue;
             }
@@ -170,20 +310,18 @@ impl Plugin for &GeoJsonDispatcher {
 
 impl GeoJsonDispatcher {
     pub fn show_ui(&mut self, ui: &Ui) {
-        if self.jsons.is_empty() {
+        if self.entries.read().unwrap().is_empty() {
             return;
         }
         Window::new("")
             .anchor(Align2::RIGHT_TOP, [-10., 30.])
             .interactable(true)
             .show(ui.ctx(), |ui| {
-                self.jsons.iter_mut().for_each(|entry| entry.show_ui(ui));
+                self.entries
+                    .write()
+                    .unwrap()
+                    .iter_mut()
+                    .for_each(|entry| entry.show_ui(ui));
             });
-    }
-
-    pub fn upload_json_array(&mut self, jsons: &mut Vec<geojson::GeoJson>) {
-        while let Some(json) = jsons.pop() {
-            self.jsons.push(Entry::new_upload(self.jsons.len().to_string(), json))
-        }
     }
 }
