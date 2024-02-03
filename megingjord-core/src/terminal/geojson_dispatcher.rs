@@ -9,7 +9,7 @@ use reqwest::{header, Client, StatusCode};
 struct Task {}
 
 impl Task {
-    pub fn download(client: Client, jsonid: String) -> Self {
+    pub fn download(client: Client, local_id: u32, entries: &Arc<RwLock<Vec<Entry>>>, jsonid: String) -> Self {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let runtime = tokio::runtime::Builder::new_current_thread()
@@ -17,11 +17,15 @@ impl Task {
                 .build()
                 .unwrap();
 
-            std::thread::spawn(move || runtime.block_on(async { Task::run_download(client, jsonid).await }));
+            let entries = Arc::clone(entries);
+
+            std::thread::spawn(move || {
+                runtime.block_on(async { Task::run_download(client, local_id, entries, jsonid).await })
+            });
         }
 
         #[cfg(target_arch = "wasm32")]
-        wasm_bindgen_futures::spawn_local(async move { Task::get(client, jsonid).await });
+        wasm_bindgen_futures::spawn_local(async move { Task::run_download(client, local_id, entries, jsonid).await });
 
         Self {}
     }
@@ -45,17 +49,41 @@ impl Task {
         Self {}
     }
 
-    async fn run_download(client: Client, jsonid: String) {
-        match client.get(format!("http://127.0.0.1:3000/get/{}", jsonid)).send().await {
+    async fn run_download(client: Client, local_id: u32, entries: Arc<RwLock<Vec<Entry>>>, jsonid: String) {
+        entries
+            .write()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| entry.local_id == local_id)
+            .map(|entry| {
+                entry.status = EntryStatus::Downloading;
+            });
+
+        let result = match client.get(format!("http://127.0.0.1:3000/get/{}", jsonid)).send().await {
             Ok(response) => {
                 if response.status() == StatusCode::OK {
-                    /* TaskResult::Received(response.json::<GeoJson>().await.unwrap()) */
+                    Ok(response.json::<GeoJson>().await.unwrap())
                 } else {
-                    /* TaskResult::Error(format!("server returns code {}", response.status())) */
-                };
+                    Err(format!("server returns code {}", response.status()))
+                }
             }
-            Err(_) => { /* TaskResult::Error(err.to_string()) */ }
-        }
+            Err(err) => Err(format!("generic error: {}", err)),
+        };
+
+        entries
+            .write()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| entry.local_id == local_id)
+            .map(|entry| match result {
+                Ok(geojson) => {
+                    entry.status = EntryStatus::Ready(entry.id.clone());
+                    entry.json = Some(geojson);
+                }
+                Err(error) => {
+                    entry.status = EntryStatus::DownloadError(error);
+                }
+            });
     }
 
     async fn run_upload(client: Client, local_id: u32, entries: Arc<RwLock<Vec<Entry>>>) {
@@ -126,7 +154,7 @@ enum EntryStatus {
     Wait,
     Ready(String),
     Downloading,
-    DownloadError,
+    DownloadError(String),
     Uploading,
     UploadError(String),
 }
@@ -191,7 +219,11 @@ impl GeoJsonDispatcher {
     pub fn download(&mut self, id: String) {
         let local_id = self.next_id();
 
-        self.entries.write().unwrap().push(Entry::new_with_id(local_id, id));
+        self.entries
+            .write()
+            .unwrap()
+            .push(Entry::new_with_id(local_id, id.clone()));
+        Task::download(self.client.clone(), local_id, &self.entries, id);
     }
 
     pub fn upload_json_array(&mut self, jsons: &mut Vec<geojson::GeoJson>) {

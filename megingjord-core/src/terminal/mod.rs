@@ -170,6 +170,7 @@ impl MyApp {
             instance.watch_geolocation();
         }
 
+        instance.geojson_dispatcher.download("world".to_string());
         instance
     }
 
