@@ -1,6 +1,5 @@
 pub mod config;
 pub mod geojson_dispatcher;
-pub mod geojson_exchange;
 pub mod geolocation;
 pub mod local_osm_tiles;
 pub mod mappainter;
@@ -128,7 +127,6 @@ pub struct MyApp {
     map_memory: MapMemory,
     config_ctx: config::ConfigContext,
     plugin_painter: mappainter::MapPainterPlugin,
-    exchange: geojson_exchange::GeoJsonExchange,
     geojson_dispatcher: geojson_dispatcher::GeoJsonDispatcher,
     geo: Arc<Mutex<Cell<Option<GeoLocation>>>>,
     #[cfg(target_arch = "wasm32")]
@@ -149,7 +147,6 @@ impl MyApp {
             map_memory: MapMemory::default(),
             config_ctx,
             plugin_painter: mappainter::MapPainterPlugin::new(config.state),
-            exchange: Default::default(),
             geojson_dispatcher: Default::default(),
             geo: Arc::new(Mutex::new(Cell::new(None))),
             #[cfg(target_arch = "wasm32")]
@@ -306,7 +303,6 @@ impl eframe::App for MyApp {
             ..Default::default()
         };
 
-        self.exchange.update_status();
         let geolocation = self.probe_geolocation();
         let myposition = if let Some(geolocation) = geolocation {
             geolocation.position
@@ -335,7 +331,6 @@ impl eframe::App for MyApp {
             }
             // Draw utility windows.
             if !self.plugin_painter.painting_in_progress() {
-                self.exchange.show_ui(ui);
                 zoom(ui, &mut self.map_memory);
                 if self.sources.len() > 1 {
                     controls(ui, &mut self.selected_source, &mut self.sources.keys());
