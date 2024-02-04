@@ -1,6 +1,6 @@
 use axum::{
     extract,
-    extract::{DefaultBodyLimit, Json, State},
+    extract::DefaultBodyLimit,
     handler::Handler,
     http::header,
     response::IntoResponse,
@@ -83,7 +83,10 @@ async fn options_handler_new() -> impl IntoResponse {
 }
 
 #[debug_handler]
-async fn post_handler_new(State(state): State<SharedServerState>, Json(payload): Json<GeoJson>) -> impl IntoResponse {
+async fn post_handler_new(
+    extract::State(state): extract::State<SharedServerState>,
+    extract::Json(payload): extract::Json<GeoJson>,
+) -> impl IntoResponse {
     state.write().await.json = Some(payload.clone());
 
     let pool = &state.write().await.sqlite;
@@ -108,22 +111,37 @@ async fn post_handler_new(State(state): State<SharedServerState>, Json(payload):
     ([(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")], "unique_id")
 }
 
+#[derive(sqlx::FromRow)]
+struct QueryResult {
+    json: sqlx::types::JsonValue,
+}
+
 async fn handler_get(
-    State(state): State<SharedServerState>,
+    extract::State(state): extract::State<SharedServerState>,
     extract::Path(_id): extract::Path<String>,
 ) -> impl IntoResponse {
-    let jsonstr = if let Some(geojson) = &state.read().await.json {
-        geojson.to_string()
-    } else {
-        "{}".to_string()
-    };
+    let pool = &state.write().await.sqlite;
+
+    let result: Vec<QueryResult> =
+        sqlx::query_as("SELECT json FROM lines WHERE timestamp > datetime('now', '-7 day');")
+            .fetch_all(pool)
+            .await
+            .unwrap();
 
     (
         [
             (header::CONTENT_TYPE, "application/geo+json"),
             (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
         ],
-        jsonstr,
+        geojson::FeatureCollection {
+            bbox: None,
+            features: result
+                .iter()
+                .map(|feature_result| geojson::Feature::from_json_value(feature_result.json.clone()).unwrap())
+                .collect(),
+            foreign_members: None,
+        }
+        .to_string(),
     )
 }
 
