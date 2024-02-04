@@ -2,7 +2,24 @@ use axum::{extract, http::header, response::IntoResponse, routing::get, routing:
 use geojson::GeoJson;
 use std::net::SocketAddr;
 
-async fn handler_new(extract::Json(payload): extract::Json<GeoJson>) -> impl IntoResponse {
+use tower_http::trace::{self, TraceLayer};
+use tracing::Level;
+
+async fn options_handler_new() -> impl IntoResponse {
+    (
+        [
+            (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            (header::ACCESS_CONTROL_ALLOW_METHODS, "POST, OPTIONS"),
+            (
+                header::ACCESS_CONTROL_ALLOW_HEADERS,
+                "Origin, X-Requested-With, Content-Type",
+            ),
+        ],
+        "",
+    )
+}
+
+async fn post_handler_new(extract::Json(payload): extract::Json<GeoJson>) -> impl IntoResponse {
     println!("{:?}", payload);
 
     ([(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")], "unique_id")
@@ -463,18 +480,31 @@ async fn handler_get(extract::Path(_id): extract::Path<String>) -> impl IntoResp
 
     let geojson: GeoJson = geojson_str.parse::<GeoJson>().unwrap();
 
-    ([(header::CONTENT_TYPE, "application/geo+json")], geojson.to_string())
+    (
+        [
+            (header::CONTENT_TYPE, "application/geo+json"),
+            (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+        ],
+        geojson.to_string(),
+    )
 }
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt().with_target(false).compact().init();
+
     let app = Router::new()
         .route("/", get(|| async { "What are you doing here?" }))
-        .route("/new", post(handler_new))
-        .route("/new", options(handler_new))
-        .route("/get/:id", get(handler_get));
+        .route("/new", post(post_handler_new))
+        .route("/new", options(options_handler_new))
+        .route("/get/:id", get(handler_get))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
+                .on_response(trace::DefaultOnResponse::new().level(Level::INFO)),
+        );
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    println!("listening on http://{}", addr);
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    tracing::info!("listening on {}", addr);
     axum_server::bind(addr).serve(app.into_make_service()).await.unwrap();
 }
