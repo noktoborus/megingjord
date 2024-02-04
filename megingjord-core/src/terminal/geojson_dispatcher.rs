@@ -10,14 +10,14 @@ struct Task {}
 
 impl Task {
     pub fn download(client: Client, local_id: u32, entries: &Arc<RwLock<Vec<Entry>>>, jsonid: String) -> Self {
+        let entries = Arc::clone(entries);
+
         #[cfg(not(target_arch = "wasm32"))]
         {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .unwrap();
-
-            let entries = Arc::clone(entries);
 
             std::thread::spawn(move || {
                 runtime.block_on(async { Task::run_download(client, local_id, entries, jsonid).await })
@@ -31,14 +31,14 @@ impl Task {
     }
 
     pub fn upload(client: Client, local_id: u32, entries: &Arc<RwLock<Vec<Entry>>>) -> Self {
+        let entries = Arc::clone(entries);
+
         #[cfg(not(target_arch = "wasm32"))]
         {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .unwrap();
-
-            let entries = Arc::clone(entries);
 
             std::thread::spawn(move || runtime.block_on(async { Task::run_upload(client, local_id, entries).await }));
         }
