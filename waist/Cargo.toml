@@ -19,3 +19,4 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 rusqlite = "0.30.0"
 tower = { version = "0.4.13", features = ["timeout"] }
 sqlx = { version = "0.7.3", features = ["runtime-tokio-native-tls", "sqlite", "macros"] }
+axum-macros = "0.4.1"

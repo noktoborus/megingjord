@@ -7,10 +7,12 @@ use axum::{
     routing::{get, options},
     Router,
 };
+pub use axum_macros::debug_handler;
 use geojson::GeoJson;
 use sqlx::migrate::MigrateDatabase;
 use sqlx::SqlitePool;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tower_http::trace;
 use tower_http::{compression::CompressionLayer, limit::RequestBodyLimitLayer};
 use tracing::Level;
@@ -19,44 +21,50 @@ type SharedServerState = Arc<RwLock<ServerState>>;
 
 struct ServerState {
     json: Option<GeoJson>,
-    sqlite: String,
+    sqlite: SqlitePool,
 }
 
 impl ServerState {
-    async fn create_db(db_url: &String) {
+    async fn create_db(db_url: &String) -> SqlitePool {
         if !sqlx::Sqlite::database_exists(&db_url).await.unwrap_or(false) {
             match sqlx::Sqlite::create_database(&db_url).await {
-                Ok(_) => println!("Database created sucessfully"),
+                Ok(_) => tracing::info!("Database created sucessfully"),
                 Err(e) => panic!("{}", e),
             }
         }
+        Self::build_db_schema(db_url).await
     }
 
-    async fn build_db_schema(db_url: &String) {
-        let instances = SqlitePool::connect(&db_url).await.unwrap();
-
-        let qry = "CREATE TABLE lines (timestamp INT, json TEXT);";
-        let result = sqlx::query(&qry).execute(&instances).await;
-        instances.close().await;
+    async fn build_db_schema(db_url: &String) -> SqlitePool {
+        let instance = SqlitePool::connect(db_url).await.unwrap();
+        let qry = "CREATE TABLE IF NOT EXISTS lines (timestamp DATETIME, json TEXT);";
+        let result = sqlx::query(&qry).execute(&instance).await;
 
         match result {
             Ok(_) => {
-                println!("DB schema created successfully");
+                tracing::info!("DB schema created successfully");
             }
             Err(e) => panic!("{}", e),
         }
+        instance
     }
 
     async fn new() -> Self {
         let db_url = String::from("sqlite://sqlite.db");
+        let sqlite = Self::create_db(&db_url).await;
 
-        Self::create_db(&db_url).await;
-        Self::build_db_schema(&db_url).await;
+        Self { json: None, sqlite }
+    }
+}
 
-        Self {
-            json: None,
-            sqlite: db_url,
-        }
+impl Drop for ServerState {
+    fn drop(&mut self) {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        runtime.block_on(async { self.sqlite.close().await });
     }
 }
 
@@ -74,8 +82,28 @@ async fn options_handler_new() -> impl IntoResponse {
     )
 }
 
+#[debug_handler]
 async fn post_handler_new(State(state): State<SharedServerState>, Json(payload): Json<GeoJson>) -> impl IntoResponse {
-    state.write().unwrap().json = Some(payload);
+    state.write().await.json = Some(payload.clone());
+
+    let pool = &state.write().await.sqlite;
+
+    match &payload {
+        GeoJson::Geometry(_) => {}
+        GeoJson::Feature(_) => {}
+        GeoJson::FeatureCollection(fc) => {
+            for feature in &fc.features {
+                let result = sqlx::query("INSERT INTO lines (timestamp, json) VALUES (datetime('now'), $1)")
+                    .bind(feature.to_string())
+                    .execute(pool)
+                    .await;
+                match result {
+                    Ok(_) => {}
+                    Err(e) => tracing::error!("DB insert fail: {:?}", e),
+                }
+            }
+        }
+    }
 
     ([(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")], "unique_id")
 }
@@ -84,7 +112,7 @@ async fn handler_get(
     State(state): State<SharedServerState>,
     extract::Path(_id): extract::Path<String>,
 ) -> impl IntoResponse {
-    let jsonstr = if let Some(geojson) = &state.read().unwrap().json {
+    let jsonstr = if let Some(geojson) = &state.read().await.json {
         geojson.to_string()
     } else {
         "{}".to_string()
