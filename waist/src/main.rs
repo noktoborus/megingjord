@@ -1,9 +1,23 @@
-use axum::{extract, http::header, response::IntoResponse, routing::get, routing::options, routing::post, Router};
+use axum::{
+    extract,
+    extract::{DefaultBodyLimit, Json, State},
+    handler::Handler,
+    http::header,
+    response::IntoResponse,
+    routing::{get, options},
+    Router,
+};
 use geojson::GeoJson;
-use std::net::SocketAddr;
-
-use tower_http::trace::{self, TraceLayer};
+use std::sync::{Arc, RwLock};
+use tower_http::trace;
 use tracing::Level;
+
+use tower_http::{compression::CompressionLayer, limit::RequestBodyLimitLayer};
+
+type SharedServerState = Arc<RwLock<ServerState>>;
+
+struct ServerState {
+}
 
 async fn options_handler_new() -> impl IntoResponse {
     (
@@ -19,13 +33,16 @@ async fn options_handler_new() -> impl IntoResponse {
     )
 }
 
-async fn post_handler_new(extract::Json(payload): extract::Json<GeoJson>) -> impl IntoResponse {
+async fn post_handler_new(State(_state): State<SharedServerState>, Json(payload): Json<GeoJson>) -> impl IntoResponse {
     println!("{:?}", payload);
 
     ([(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")], "unique_id")
 }
 
-async fn handler_get(extract::Path(_id): extract::Path<String>) -> impl IntoResponse {
+async fn handler_get(
+    State(_state): State<SharedServerState>,
+    extract::Path(_id): extract::Path<String>,
+) -> impl IntoResponse {
     let geojson_str = r##"{
       "bbox": [
         40.288084979755546,
@@ -492,19 +509,30 @@ async fn handler_get(extract::Path(_id): extract::Path<String>) -> impl IntoResp
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt().with_target(false).compact().init();
+    let shared_server_state = Arc::new(RwLock::new(ServerState {}));
 
     let app = Router::new()
         .route("/", get(|| async { "What are you doing here?" }))
-        .route("/new", post(post_handler_new))
-        .route("/new", options(options_handler_new))
-        .route("/get/:id", get(handler_get))
+        .route(
+            "/new",
+            options(options_handler_new).post_service(
+                post_handler_new
+                    .layer((
+                        DefaultBodyLimit::disable(),
+                        RequestBodyLimitLayer::new(1024 * 1_000 /* ~1mb */),
+                    ))
+                    .with_state(Arc::clone(&shared_server_state)),
+            ),
+        )
+        .route("/get/:id", get(handler_get).layer(CompressionLayer::new()))
         .layer(
-            TraceLayer::new_for_http()
+            trace::TraceLayer::new_for_http()
                 .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
                 .on_response(trace::DefaultOnResponse::new().level(Level::INFO)),
-        );
+        )
+        .with_state(Arc::clone(&shared_server_state));
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
-    tracing::info!("listening on {}", addr);
-    axum_server::bind(addr).serve(app.into_make_service()).await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    tracing::info!("listening on {}", listener.local_addr().unwrap());
+    axum::serve(listener, app).await.unwrap();
 }
