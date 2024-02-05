@@ -80,7 +80,7 @@ impl Task {
             .find(|entry| entry.local_id == local_id)
             .map(|entry| match result {
                 Ok(geojson) => {
-                    entry.status = EntryStatus::Ready(entry.id.clone());
+                    entry.status = EntryStatus::Ready;
                     entry.json = Some(geojson);
                 }
                 Err(error) => {
@@ -111,40 +111,37 @@ impl Task {
             match response {
                 Ok(response) => {
                     if response.status() == StatusCode::OK {
-                        match response.text().await {
-                            Ok(identifier) => EntryStatus::Ready(identifier),
-                            Err(err) => EntryStatus::UploadError(format!("{}", err)),
-                        }
+                        response.text().await.map_err(|e| format!("{}", e))
                     } else {
-                        EntryStatus::UploadError(format!("server error code: {}", response.status()))
+                        Err(format!("server error code: {}", response.status()))
                     }
                 }
-                Err(err) => EntryStatus::UploadError(format!("{}", err)),
+                Err(err) => Err(format!("{}", err)),
             }
         } else {
-            EntryStatus::UploadError(format!("Nothing to upload: body is empty"))
+            Err(format!("Nothing to upload: body is empty"))
         };
 
         match status {
-            EntryStatus::Ready(identifier) => {
+            Ok(identifier) => {
                 if let Some(entry) = entries
                     .write()
                     .unwrap()
                     .iter_mut()
                     .find(|entry| entry.local_id == local_id)
                 {
-                    entry.status = EntryStatus::Ready(identifier.clone());
+                    entry.status = EntryStatus::Ready;
                     entry.id = identifier;
                 }
             }
-            _ => {
+            Err(e) => {
                 if let Some(entry) = entries
                     .write()
                     .unwrap()
                     .iter_mut()
                     .find(|entry| entry.local_id == local_id)
                 {
-                    entry.status = status;
+                    entry.status = EntryStatus::UploadError(e);
                 }
             }
         }
@@ -155,7 +152,7 @@ impl Task {
 enum EntryStatus {
     #[default]
     Wait,
-    Ready(String),
+    Ready,
     Downloading,
     DownloadError(String),
     Uploading,
