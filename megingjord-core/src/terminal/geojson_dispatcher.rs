@@ -62,7 +62,10 @@ impl Task {
         let result = match client.get(format!("http://127.0.0.1:3000/get/{}", jsonid)).send().await {
             Ok(response) => {
                 if response.status() == StatusCode::OK {
-                    Ok(response.json::<GeoJson>().await.unwrap())
+                    response
+                        .json::<GeoJson>()
+                        .await
+                        .map_err(|e| format!("json parsing error: {}", e))
                 } else {
                     Err(format!("server returns code {}", response.status()))
                 }
