@@ -124,14 +124,18 @@ impl Task {
 
         match status {
             Ok(identifier) => {
-                if let Some(entry) = entries
-                    .write()
-                    .unwrap()
-                    .iter_mut()
-                    .find(|entry| entry.local_id == local_id)
-                {
-                    entry.status = EntryStatus::Ready;
-                    entry.id = identifier;
+                let mut entries = entries.write().unwrap();
+                let entry_pos = entries.iter().position(|entry| entry.local_id == local_id);
+
+                if let Some(entry_pos) = entry_pos {
+                    if let Some(similar_entry_pos) = entries.iter().position(|entry| entry.id == identifier) {
+                        if let Some(mut json) = entries.swap_remove(entry_pos).json {
+                            entries[similar_entry_pos].append(&mut json);
+                        }
+                    } else {
+                        entries[entry_pos].status = EntryStatus::Ready;
+                        entries[entry_pos].id = identifier;
+                    }
                 }
             }
             Err(e) => {
@@ -193,6 +197,33 @@ impl Entry {
             &mut self.visible,
             RichText::new(format!("{}: {:?}", self.id, self.status)).heading(),
         );
+    }
+
+    fn append(&mut self, other_geojson: &mut GeoJson) {
+        if let GeoJson::FeatureCollection(fc) = other_geojson {
+            if let Some(GeoJson::FeatureCollection(self_feature_collection)) = &mut self.json {
+                self_feature_collection.features.append(&mut fc.features);
+                if let (Some(self_bbox), Some(other_bbox)) = (&self_feature_collection.bbox, &fc.bbox) {
+                    let mut new_bbox = self_bbox.clone();
+
+                    for idx in 0..3 {
+                        if self_bbox[idx] < other_bbox[idx] {
+                            new_bbox[idx] = other_bbox[idx];
+                        }
+                    }
+
+                    self_feature_collection.bbox = Some(new_bbox);
+                }
+            } else {
+                let mut new_json = geojson::FeatureCollection {
+                    features: Vec::new(),
+                    foreign_members: None,
+                    bbox: fc.bbox.clone(),
+                };
+
+                new_json.features.append(&mut fc.features);
+            }
+        }
     }
 }
 
