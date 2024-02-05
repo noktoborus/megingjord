@@ -108,7 +108,7 @@ async fn post_handler_new(
         }
     }
 
-    ([(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")], "unique_id")
+    ([(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")], "world")
 }
 
 #[derive(sqlx::FromRow)]
