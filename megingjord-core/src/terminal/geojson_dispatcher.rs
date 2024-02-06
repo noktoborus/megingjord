@@ -50,14 +50,14 @@ impl Task {
     }
 
     async fn run_download(client: Client, local_id: u32, entries: Arc<RwLock<Vec<Entry>>>, jsonid: String) {
-        entries
+        if let Some(entry) = entries
             .write()
             .unwrap()
             .iter_mut()
             .find(|entry| entry.local_id == local_id)
-            .map(|entry| {
-                entry.status = EntryStatus::Downloading;
-            });
+        {
+            entry.status = EntryStatus::Downloading;
+        }
 
         let result = match client.get(format!("http://127.0.0.1:3000/get/{}", jsonid)).send().await {
             Ok(response) => {
@@ -73,12 +73,13 @@ impl Task {
             Err(err) => Err(format!("generic error: {}", err)),
         };
 
-        entries
+        if let Some(entry) = entries
             .write()
             .unwrap()
             .iter_mut()
             .find(|entry| entry.local_id == local_id)
-            .map(|entry| match result {
+        {
+            match result {
                 Ok(geojson) => {
                     entry.status = EntryStatus::Ready;
                     entry.json = Some(geojson);
@@ -86,7 +87,8 @@ impl Task {
                 Err(error) => {
                     entry.status = EntryStatus::DownloadError(error);
                 }
-            });
+            }
+        }
     }
 
     async fn run_upload(client: Client, local_id: u32, entries: Arc<RwLock<Vec<Entry>>>) {
@@ -119,7 +121,7 @@ impl Task {
                 Err(err) => Err(format!("{}", err)),
             }
         } else {
-            Err(format!("Nothing to upload: body is empty"))
+            Err("Nothing to upload: body is empty".to_string())
         };
 
         match status {
