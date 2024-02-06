@@ -8,6 +8,7 @@ use axum::{
     Router,
 };
 pub use axum_macros::debug_handler;
+use derivative::Derivative;
 use geojson::GeoJson;
 use sqlx::migrate::MigrateDatabase;
 use sqlx::SqlitePool;
@@ -145,10 +146,57 @@ async fn handler_get(
     )
 }
 
+#[derive(Derivative, serde::Deserialize, serde::Serialize, Debug)]
+#[derivative(Default)]
+struct TslAcme {
+    #[derivative(Default(value = "false"))]
+    enabled: bool,
+    #[derivative(Default(value = r#"["admin@example.com".to_string()].to_vec()"#))]
+    contacts: Vec<String>,
+    #[derivative(Default(value = r#"["example.com".to_string()].to_vec()"#))]
+    domains: Vec<String>,
+}
+
+#[derive(Derivative, serde::Deserialize, serde::Serialize, Debug)]
+#[derivative(Default)]
+struct Config {
+    #[derivative(Default(value = r#""127.0.0.1".to_string()"#))]
+    host: String,
+    #[derivative(Default(value = r#"3000"#))]
+    port: u16,
+    tsl_acme: TslAcme,
+}
+
+fn read_config() -> Config {
+    let config_file = "config.toml";
+
+    match std::fs::read_to_string(config_file) {
+        Ok(content) => match toml::from_str::<Config>(&content) {
+            Ok(config) => return config,
+            Err(e) => {
+                tracing::error!("file '{}' parsing error: {}", config_file, e);
+            }
+        },
+        Err(e) => match e.kind() {
+            std::io::ErrorKind::NotFound => {
+                tracing::info!("Config file '{}' not found", config_file);
+            }
+            _ => {
+                tracing::error!("file '{}' read error: {}", config_file, e);
+            }
+        },
+    };
+
+    let config = Default::default();
+    tracing::info!("Use default config:\n{}", toml::to_string(&config).unwrap());
+    config
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt().with_target(false).compact().init();
     let shared_server_state = Arc::new(RwLock::new(ServerState::new().await));
+    let config: Config = read_config();
 
     let app = Router::new()
         .route("/", get(|| async { "What are you doing here?" }))
@@ -171,7 +219,9 @@ async fn main() {
         )
         .with_state(Arc::clone(&shared_server_state));
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.host, config.port))
+        .await
+        .unwrap();
     tracing::info!("listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
