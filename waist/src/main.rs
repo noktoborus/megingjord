@@ -23,6 +23,7 @@ use tracing::Level;
 type SharedServerState = Arc<RwLock<ServerState>>;
 
 struct ServerState {
+    default_identifier: String,
     json: Option<GeoJson>,
     sqlite: SqlitePool,
 }
@@ -40,7 +41,7 @@ impl ServerState {
 
     async fn build_db_schema(db_url: &String) -> SqlitePool {
         let instance = SqlitePool::connect(db_url).await.unwrap();
-        let qry = "CREATE TABLE IF NOT EXISTS lines (timestamp DATETIME, json TEXT);";
+        let qry = "CREATE TABLE IF NOT EXISTS lines (timestamp DATETIME, identifier TEXT, json TEXT);";
         let result = sqlx::query(&qry).execute(&instance).await;
 
         match result {
@@ -52,11 +53,15 @@ impl ServerState {
         instance
     }
 
-    async fn new(db_url: &String) -> Self {
+    async fn new(db_url: &String, default_identifier: String) -> Self {
         let db_url = String::from(format!("sqlite://{}", db_url));
         let sqlite = Self::create_db(&db_url).await;
 
-        Self { json: None, sqlite }
+        Self {
+            json: None,
+            sqlite,
+            default_identifier,
+        }
     }
 }
 
@@ -91,18 +96,20 @@ async fn post_handler_new(
     extract::Json(payload): extract::Json<GeoJson>,
 ) -> impl IntoResponse {
     state.write().await.json = Some(payload.clone());
-
-    let pool = &state.write().await.sqlite;
+    let state = state.write().await;
+    let pool = &state.sqlite;
 
     match &payload {
         GeoJson::Geometry(_) => {}
         GeoJson::Feature(_) => {}
         GeoJson::FeatureCollection(fc) => {
             for feature in &fc.features {
-                let result = sqlx::query("INSERT INTO lines (timestamp, json) VALUES (datetime('now'), $1)")
-                    .bind(feature.to_string())
-                    .execute(pool)
-                    .await;
+                let result =
+                    sqlx::query("INSERT INTO lines (timestamp, identifier, json) VALUES (datetime('now'), '$1', $2)")
+                        .bind(feature.to_string())
+                        .bind(state.default_identifier.clone())
+                        .execute(pool)
+                        .await;
                 match result {
                     Ok(_) => {}
                     Err(e) => tracing::error!("DB insert fail: {:?}", e),
@@ -121,12 +128,13 @@ struct QueryResult {
 
 async fn handler_get(
     extract::State(state): extract::State<SharedServerState>,
-    extract::Path(_id): extract::Path<String>,
+    extract::Path(id): extract::Path<String>,
 ) -> impl IntoResponse {
     let pool = &state.write().await.sqlite;
 
     let result: Vec<QueryResult> =
-        sqlx::query_as("SELECT json FROM lines WHERE timestamp > datetime('now', '-7 day');")
+        sqlx::query_as("SELECT json FROM lines WHERE identifier = $1 AND timestamp > datetime('now', '-7 day');")
+            .bind(id)
             .fetch_all(pool)
             .await
             .unwrap();
@@ -164,6 +172,8 @@ struct TslAcme {
 #[derive(Derivative, serde::Deserialize, serde::Serialize, Debug)]
 #[derivative(Default)]
 struct Config {
+    #[derivative(Default(value = r#""world".to_string()"#))]
+    default_identifier: String,
     #[derivative(Default(value = r#""sqlite.db".to_string()"#))]
     sqlite: String,
     #[derivative(Default(value = r#""127.0.0.1".to_string()"#))]
@@ -224,7 +234,9 @@ fn build_acme_acceptor(config: &Config) -> rustls_acme::axum::AxumAcceptor {
 async fn main() {
     tracing_subscriber::fmt().with_target(false).compact().init();
     let config: Config = read_config();
-    let shared_server_state = Arc::new(RwLock::new(ServerState::new(&config.sqlite).await));
+    let shared_server_state = Arc::new(RwLock::new(
+        ServerState::new(&config.sqlite, config.default_identifier.clone()).await,
+    ));
 
     let app = Router::new()
         .route("/", get(|| async { "What are you doing here?" }))
