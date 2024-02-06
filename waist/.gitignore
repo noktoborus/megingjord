@@ -1,2 +1,2 @@
 config.toml
-sqlite.db
+sqlite.db*
