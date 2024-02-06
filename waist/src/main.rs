@@ -12,8 +12,10 @@ use derivative::Derivative;
 use geojson::GeoJson;
 use sqlx::migrate::MigrateDatabase;
 use sqlx::SqlitePool;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tokio_stream::StreamExt;
 use tower_http::trace;
 use tower_http::{compression::CompressionLayer, limit::RequestBodyLimitLayer};
 use tracing::Level;
@@ -50,7 +52,7 @@ impl ServerState {
         instance
     }
 
-    async fn new(db_url: String) -> Self {
+    async fn new(db_url: &String) -> Self {
         let db_url = String::from(format!("sqlite://{}", db_url));
         let sqlite = Self::create_db(&db_url).await;
 
@@ -155,6 +157,8 @@ struct TslAcme {
     contacts: Vec<String>,
     #[derivative(Default(value = r#"["example.com".to_string()].to_vec()"#))]
     domains: Vec<String>,
+    #[derivative(Default(value = r#""cert_cache".to_string()"#))]
+    cert_cache_dir: String,
 }
 
 #[derive(Derivative, serde::Deserialize, serde::Serialize, Debug)]
@@ -166,7 +170,7 @@ struct Config {
     host: String,
     #[derivative(Default(value = r#"3000"#))]
     port: u16,
-    tsl_acme: TslAcme,
+    tls_acme: TslAcme,
 }
 
 fn read_config() -> Config {
@@ -194,11 +198,33 @@ fn read_config() -> Config {
     config
 }
 
+fn build_acme_acceptor(config: &Config) -> rustls_acme::axum::AxumAcceptor {
+    let mut state = rustls_acme::AcmeConfig::new(config.tls_acme.domains.clone())
+        .contact(config.tls_acme.contacts.iter().map(|x| format!("mailto:{}", x)))
+        .cache(rustls_acme::caches::DirCache::new(
+            config.tls_acme.cert_cache_dir.clone(),
+        ))
+        .directory_lets_encrypt(true)
+        .state();
+    let acceptor = state.axum_acceptor(state.default_rustls_config());
+
+    tokio::spawn(async move {
+        loop {
+            match state.next().await.unwrap() {
+                Ok(ok) => tracing::info!("TLS ACME event: {:?}", ok),
+                Err(err) => tracing::error!("TLS ACME error: {:?}", err),
+            }
+        }
+    });
+
+    acceptor
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt().with_target(false).compact().init();
     let config: Config = read_config();
-    let shared_server_state = Arc::new(RwLock::new(ServerState::new(config.sqlite).await));
+    let shared_server_state = Arc::new(RwLock::new(ServerState::new(&config.sqlite).await));
 
     let app = Router::new()
         .route("/", get(|| async { "What are you doing here?" }))
@@ -221,34 +247,17 @@ async fn main() {
         )
         .with_state(Arc::clone(&shared_server_state));
 
-    let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.host, config.port))
-        .await
+    let addr = format!("{}:{}", config.host, config.port)
+        .parse::<SocketAddr>()
         .unwrap();
-    tracing::info!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .unwrap();
-}
+    tracing::info!("listening on {}", addr);
 
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
-    };
+    let svc = app.into_make_service();
 
-    #[cfg(unix)]
-    let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
+    let server = axum_server::bind(addr);
+    if config.tls_acme.enabled {
+        server.acceptor(build_acme_acceptor(&config)).serve(svc).await.unwrap();
+    } else {
+        server.serve(svc).await.unwrap();
     }
 }

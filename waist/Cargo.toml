@@ -23,3 +23,5 @@ axum-macros = "0.4.1"
 toml = "0.8.10"
 serde = { version = "1.0.196", features = ["derive"] }
 derivative = "2.2.0"
+rustls-acme = { version = "0.9.1", features = ["axum"] }
+tokio-stream = "0.1.14"
