@@ -50,8 +50,8 @@ impl ServerState {
         instance
     }
 
-    async fn new() -> Self {
-        let db_url = String::from("sqlite://sqlite.db");
+    async fn new(db_url: String) -> Self {
+        let db_url = String::from(format!("sqlite://{}", db_url));
         let sqlite = Self::create_db(&db_url).await;
 
         Self { json: None, sqlite }
@@ -160,6 +160,8 @@ struct TslAcme {
 #[derive(Derivative, serde::Deserialize, serde::Serialize, Debug)]
 #[derivative(Default)]
 struct Config {
+    #[derivative(Default(value = r#""sqlite.db".to_string()"#))]
+    sqlite: String,
     #[derivative(Default(value = r#""127.0.0.1".to_string()"#))]
     host: String,
     #[derivative(Default(value = r#"3000"#))]
@@ -195,8 +197,8 @@ fn read_config() -> Config {
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt().with_target(false).compact().init();
-    let shared_server_state = Arc::new(RwLock::new(ServerState::new().await));
     let config: Config = read_config();
+    let shared_server_state = Arc::new(RwLock::new(ServerState::new(config.sqlite).await));
 
     let app = Router::new()
         .route("/", get(|| async { "What are you doing here?" }))
