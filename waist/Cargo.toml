@@ -1,0 +1,27 @@
+[package]
+name = "waist"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+axum = { version = "0.7.4", features = ["http2"] }
+axum-server = "0.6.0"
+tokio = { version = "1.35.1", features = ["full"] }
+geojson = { workspace = true }
+tower-http = { version = "0.5.1", features = ["add-extension", "compression-full", "trace", "limit"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+rusqlite = "0.30.0"
+tower = { version = "0.4.13", features = ["timeout"] }
+sqlx = { version = "0.7.3", features = ["runtime-tokio-native-tls", "sqlite", "macros"] }
+axum-macros = "0.4.1"
+toml = "0.8.10"
+serde = { version = "1.0.196", features = ["derive"] }
+derivative = "2.2.0"
+rustls-acme = { version = "0.9.1", features = ["axum"] }
+tokio-stream = "0.1.14"

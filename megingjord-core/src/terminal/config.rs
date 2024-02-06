@@ -147,9 +147,9 @@ impl ConfigReadWriter {
         Self {
             local_storage: if let Some(local_storage) = &self.local_storage {
                 if let Some(value) = value {
-                    local_storage.set_item(key, format!("{}", value).as_str()).unwrap_or({});
+                    local_storage.set_item(key, format!("{}", value).as_str()).unwrap_or(());
                 } else {
-                    local_storage.delete(key).unwrap_or({});
+                    local_storage.delete(key).unwrap_or(());
                 }
                 Some(local_storage.clone())
             } else {

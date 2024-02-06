@@ -1,4 +1,5 @@
 pub mod config;
+pub mod geojson_dispatcher;
 pub mod geolocation;
 pub mod local_osm_tiles;
 pub mod mappainter;
@@ -126,6 +127,7 @@ pub struct MyApp {
     map_memory: MapMemory,
     config_ctx: config::ConfigContext,
     plugin_painter: mappainter::MapPainterPlugin,
+    geojson_dispatcher: geojson_dispatcher::GeoJsonDispatcher,
     geo: Arc<Mutex<Cell<Option<GeoLocation>>>>,
     #[cfg(target_arch = "wasm32")]
     href: UrlHashInfo,
@@ -145,6 +147,7 @@ impl MyApp {
             map_memory: MapMemory::default(),
             config_ctx,
             plugin_painter: mappainter::MapPainterPlugin::new(config.state),
+            geojson_dispatcher: Default::default(),
             geo: Arc::new(Mutex::new(Cell::new(None))),
             #[cfg(target_arch = "wasm32")]
             href: Default::default(),
@@ -164,6 +167,7 @@ impl MyApp {
             instance.watch_geolocation();
         }
 
+        instance.geojson_dispatcher.download("world".to_string());
         instance
     }
 
@@ -177,7 +181,7 @@ impl MyApp {
 
             let _ = web_sys::window().map(|window| {
                 let _ = window.location().set_hash(format!("{}", href).as_str());
-                return true;
+                true
             });
         }
         false
@@ -186,7 +190,7 @@ impl MyApp {
     /// Update current position to coordinates from browser's url hash
     #[cfg(target_arch = "wasm32")]
     fn update_from_hash(&mut self) {
-        web_sys::window().map(|window| {
+        if let Some(window) = web_sys::window() {
             if let Ok(href) = window.location().hash() {
                 if let Ok(href) = UrlHashInfo::from_str(href.as_str()) {
                     if href != self.href {
@@ -196,7 +200,7 @@ impl MyApp {
                     }
                 }
             }
-        });
+        };
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -316,11 +320,15 @@ impl eframe::App for MyApp {
             // In egui, widgets are constructed and consumed in each frame.
             let map = Map::new(Some(tiles), &mut self.map_memory, myposition)
                 .drag_gesture(!self.plugin_painter.painting_in_progress())
-                .with_plugin(&self.plugin_painter)
-                .with_plugin(geolocation::GeoLocationPlugin::new(geolocation));
+                .with_plugin(&mut self.plugin_painter)
+                .with_plugin(geolocation::GeoLocationPlugin::new(geolocation))
+                .with_plugin(&self.geojson_dispatcher);
 
             ui.add(map);
 
+            if let Some(mut jsons) = self.plugin_painter.export_jsons() {
+                self.geojson_dispatcher.upload_json_array(&mut jsons);
+            }
             // Draw utility windows.
             if !self.plugin_painter.painting_in_progress() {
                 zoom(ui, &mut self.map_memory);
@@ -328,6 +336,7 @@ impl eframe::App for MyApp {
                     controls(ui, &mut self.selected_source, &mut self.sources.keys());
                 }
                 acknowledge(ui, attribution);
+                self.geojson_dispatcher.show_ui(ui);
                 geolocation::GeoLocationPlugin::show_ui(ui, &mut self.map_memory, geolocation, center);
             }
             self.plugin_painter.show_ui(ui);

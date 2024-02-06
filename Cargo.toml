@@ -1,5 +1,5 @@
 [workspace]
-members = ["megingjord-core", "megingjord", "megingjord-android"]
+members = ["megingjord-core", "megingjord", "megingjord-android", "waist"]
 default-members = ["megingjord"]
 resolver = "2"
 
@@ -15,6 +15,7 @@ megingjord-core = { path = "megingjord-core" }
 eframe = "0.25"
 log = "0.4"
 web-sys = "0.3.66"
+geojson = "0.24.1"
 
 [profile.release]
 debug = true
