@@ -59,7 +59,11 @@ impl Task {
             entry.status = EntryStatus::Downloading;
         }
 
-        let result = match client.get(format!("http://127.0.0.1:3000/get/{}", jsonid)).send().await {
+        let result = match client
+            .get(format!("https://megingjord-waist.styxheim.ru/get/{}", jsonid))
+            .send()
+            .await
+        {
             Ok(response) => {
                 if response.status() == StatusCode::OK {
                     response
@@ -104,7 +108,7 @@ impl Task {
 
         let status = if let Some(json_body) = json_body {
             let response = client
-                .post("http://127.0.0.1:3000/new")
+                .post("https://megingjord-waist.styxheim.ru/new")
                 .header(header::CONTENT_TYPE, "application/geo+json")
                 .body(json_body)
                 .send()
