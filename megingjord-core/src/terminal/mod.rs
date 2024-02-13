@@ -298,6 +298,7 @@ pub fn controls(ui: &Ui, selected_source: &mut Source, possible_sources: &mut dy
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
+        let mut map_is_calm = true;
         let rimless = Frame {
             fill: ctx.style().visuals.panel_fill,
             ..Default::default()
@@ -324,7 +325,7 @@ impl eframe::App for MyApp {
                 .with_plugin(geolocation::GeoLocationPlugin::new(geolocation))
                 .with_plugin(&self.geojson_dispatcher);
 
-            ui.add(map);
+            map_is_calm = !ui.add(map).changed();
 
             if let Some(mut jsons) = self.plugin_painter.export_jsons() {
                 self.geojson_dispatcher.upload_json_array(&mut jsons);
@@ -342,14 +343,16 @@ impl eframe::App for MyApp {
             self.plugin_painter.show_ui(ui);
         });
 
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.update_hash(center, self.map_memory.zoom_get());
+        if map_is_calm {
+            #[cfg(target_arch = "wasm32")]
+            {
+                self.update_hash(center, self.map_memory.zoom_get());
+            }
+            self.config_ctx.config_update(
+                self.map_memory.zoom_get(),
+                Some(config::Position::from_position(center)),
+                self.plugin_painter.get_state_json(),
+            );
         }
-        self.config_ctx.config_update(
-            self.map_memory.zoom_get(),
-            Some(config::Position::from_position(center)),
-            self.plugin_painter.get_state_json(),
-        );
     }
 }
